@@ -6,3 +6,8 @@ contracts/evm/out/
 contracts/evm/cache/
 contracts/evm/broadcast/
 data/
+*.sqlite
+*.sqlite-*
+.env.*
+!.env.example
+contracts/evm/lib/openzeppelin-contracts/build/
