@@ -1,0 +1,136 @@
+{
+  "run_id": "11dbdfeb-b64e-4edc-8b6a-1528e43db461",
+  "started_at": "2026-10-29T17:32:12.684Z",
+  "generated_at": "2026-10-29T17:33:51.524Z",
+  "status": "running",
+  "passed": false,
+  "complete": false,
+  "mode": "full",
+  "contracts_tested": true,
+  "protocol_e2e_tested": true,
+  "rounds": [
+    {
+      "round": 1,
+      "seed": 405004,
+      "ok": true,
+      "steps": [
+        {
+          "name": "typecheck",
+          "ok": true,
+          "summary": "ok",
+          "skipped": 0,
+          "failed_tests": [],
+          "seconds": 8.838
+        },
+        {
+          "name": "build",
+          "ok": true,
+          "summary": "ok",
+          "skipped": 0,
+          "failed_tests": [],
+          "seconds": 4.647
+        },
+        {
+          "name": "vitest",
+          "ok": true,
+          "summary": "Tests  177 passed (177)",
+          "skipped": 0,
+          "failed_tests": [],
+          "seconds": 16.775
+        },
+        {
+          "name": "forge (unit+fuzz+invariant)",
+          "ok": true,
+          "summary": "67 tests passed, 0 failed, 0 skipped (67 total tests)",
+          "skipped": 0,
+          "failed_tests": [],
+          "seconds": 3.164
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "seed": 202439,
+      "ok": true,
+      "steps": [
+        {
+          "name": "typecheck",
+          "ok": true,
+          "summary": "ok",
+          "skipped": 0,
+          "failed_tests": [],
+          "seconds": 8.393
+        },
+        {
+          "name": "build",
+          "ok": true,
+          "summary": "ok",
+          "skipped": 0,
+          "failed_tests": [],
+          "seconds": 4.453
+        },
+        {
+          "name": "vitest",
+          "ok": true,
+          "summary": "Tests  177 passed (177)",
+          "skipped": 0,
+          "failed_tests": [],
+          "seconds": 17.163
+        },
+        {
+          "name": "forge (unit+fuzz+invariant)",
+          "ok": true,
+          "summary": "67 tests passed, 0 failed, 0 skipped (67 total tests)",
+          "skipped": 0,
+          "failed_tests": [],
+          "seconds": 3.211
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "seed": 59555,
+      "ok": true,
+      "steps": [
+        {
+          "name": "typecheck",
+          "ok": true,
+          "summary": "ok",
+          "skipped": 0,
+          "failed_tests": [],
+          "seconds": 7.989
+        },
+        {
+          "name": "build",
+          "ok": true,
+          "summary": "ok",
+          "skipped": 0,
+          "failed_tests": [],
+          "seconds": 4.095
+        },
+        {
+          "name": "vitest",
+          "ok": true,
+          "summary": "Tests  177 passed (177)",
+          "skipped": 0,
+          "failed_tests": [],
+          "seconds": 16.801
+        },
+        {
+          "name": "forge (unit+fuzz+invariant)",
+          "ok": true,
+          "summary": "67 tests passed, 0 failed, 0 skipped (67 total tests)",
+          "skipped": 0,
+          "failed_tests": [],
+          "seconds": 3.124
+        }
+      ]
+    }
+  ],
+  "e2e_stability": {
+    "requested": 10,
+    "executed": 0,
+    "failures": 0,
+    "runs": []
+  }
+}

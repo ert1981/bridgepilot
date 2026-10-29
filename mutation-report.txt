@@ -1,0 +1,21 @@
+generated_at: 2026-10-29T17:21:10Z
+caught: 19  survived: 0
+caught router: allow downgrade
+caught router: skip upgrade delay
+caught router: no level ratchet
+caught composite: OR instead of AND
+caught verifier: accept unknown signer
+caught replay protection removed
+caught vault: refund without initiated lock
+caught relayer: reject on missing receipt without proof
+caught relayer: ignore provider independence
+caught relayer: treat refunded as never locked
+caught relayer: no lease check before send
+caught relayer: memory store allowed in prod
+caught relayer: closed gate does not hold forward
+caught attester: count connections not operators
+caught providers: no shared-IP merging
+caught gate: running attesters != on-chain set accepted
+caught gate: deployBlock not verified
+caught gate: un-audited pending upgrade accepted
+caught gate: extra (hidden) admin accepted

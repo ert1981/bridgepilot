@@ -1,0 +1,30 @@
+{
+  "name": "bridgepilot",
+  "version": "1.0.0",
+  "description": "Cross-chain route optimizer tool for AI agents",
+  "main": "dist/apps/api/server.js",
+  "scripts": {
+    "dev": "tsx apps/api/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/apps/api/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:3x": "node scripts/test-3x.mjs",
+    "test:mutation": "bash scripts/mutation-check.sh"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "viem": "^2.57.13",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  }
+}

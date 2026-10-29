@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+audit.log
+contracts/evm/out/
+contracts/evm/cache/
+contracts/evm/broadcast/
+data/
