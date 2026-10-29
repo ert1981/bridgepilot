@@ -3,6 +3,7 @@ import type { AppConfig } from '../config/env.js';
 import type { FetchLike } from '../utils/http.js';
 import { fetchJson } from '../utils/http.js';
 import { MemoryNonceStore, type NonceStore } from './nonce-store.js';
+import { cdpAuthHeaders } from './cdp-auth.js';
 
 /** PayAI hosted facilitator: the default of @opensea/tool-sdk's x402 gate (what OpenSea-listed tools use). */
 export const PAYAI_FACILITATOR_URL = 'https://facilitator.payai.network/';
@@ -50,7 +51,14 @@ interface PaymentPayload {
   /** v2 only: the requirements the client chose to pay. */
   accepted?: Partial<PaymentRequirementsV2>;
   payload: { signature?: string; authorization?: Authorization };
+  /** v2 only: the resource being paid for (CDP Bazaar catalogs it on settle). */
+  resource?: unknown;
+  /** v2 only: extensions echoed by the client, e.g. `bazaar` discovery metadata. */
+  extensions?: Record<string, unknown>;
 }
+
+/** What the CDP Facilitator needs on the payload to index the route in the Bazaar (agentic.market). */
+export interface Discovery { resource: V2Resource; extensions?: Record<string, unknown> }
 
 export type VerifyResult =
   | { ok: true; payer: string; payload: PaymentPayload; replayKey: string; version: 1 | 2 }
@@ -106,6 +114,30 @@ export class X402 {
 
   private get usdc(): [number, string, string] {
     return USDC_NETWORKS[this.cfg.network] ?? [8453, this.cfg.asset, 'USD Coin'];
+  }
+
+  /** 'cdp' when both CDP API key env vars are set, else 'payai' (or whatever X402_FACILITATOR_URL points to). */
+  get facilitatorKind(): 'payai' | 'cdp' {
+    return this.cfg.facilitatorKind === 'cdp' && this.cfg.cdp ? 'cdp' : 'payai';
+  }
+
+  /**
+   * CDP Bazaar indexing needs `paymentPayload.resource` and `paymentPayload.extensions.bazaar` on settle.
+   * Only for v2 payments through the CDP Facilitator; fields the client already sent are kept. The signed
+   * EIP-3009 authorization is not touched (its signature does not cover these fields). PayAI payloads are
+   * forwarded exactly as before.
+   */
+  withDiscovery(payload: PaymentPayload, version: 1 | 2, discovery?: Discovery): PaymentPayload {
+    if (this.facilitatorKind !== 'cdp' || version !== 2 || !discovery) return payload;
+    const out: PaymentPayload = { ...payload };
+    if (out.resource === undefined || out.resource === null) out.resource = discovery.resource;
+    const bazaar = discovery.extensions?.bazaar;
+    if (bazaar !== undefined) {
+      const ext = out.extensions && typeof out.extensions === 'object' && !Array.isArray(out.extensions) ? { ...out.extensions } : {};
+      if (ext.bazaar === undefined) ext.bazaar = bazaar;
+      out.extensions = ext;
+    }
+    return out;
   }
 
   get caip2(): string {
@@ -166,10 +198,11 @@ export class X402 {
    * @param header  X-PAYMENT (v1) or PAYMENT-SIGNATURE (v2) value
    * @param viaV2Header true when the value came from PAYMENT-SIGNATURE
    */
-  async verify(header: string, reqs: PaymentRequirements, viaV2Header = false): Promise<VerifyResult> {
-    const p = this.decode(header);
-    if (!p) return { ok: false, reason: 'malformed X-PAYMENT header' };
-    const version: 1 | 2 = viaV2Header || p.x402Version === 2 ? 2 : 1;
+  async verify(header: string, reqs: PaymentRequirements, viaV2Header = false, discovery?: Discovery): Promise<VerifyResult> {
+    const decoded = this.decode(header);
+    if (!decoded) return { ok: false, reason: 'malformed X-PAYMENT header' };
+    const version: 1 | 2 = viaV2Header || decoded.x402Version === 2 ? 2 : 1;
+    const p = this.withDiscovery(decoded, version, discovery);
     const v2 = this.requirementsV2();
     if (version === 2) {
       const acc = p.accepted;
@@ -225,11 +258,14 @@ export class X402 {
   }
 
   private post(path: 'verify' | 'settle', timeoutMs: number, paymentPayload: PaymentPayload, paymentRequirements: unknown, version: 1 | 2) {
+    // CDP: a fresh short-lived Bearer JWT per call. PayAI: no auth headers, exactly as before.
+    const auth = this.facilitatorKind === 'cdp' ? cdpAuthHeaders(this.cfg.cdp!, path, this.now()) : undefined;
     return fetchJson(new URL(path, this.cfg.facilitatorUrl).toString(), {
       provider: 'x402',
       fetch: this.fetch,
       timeoutMs,
       method: 'POST',
+      ...(auth ? { headers: auth } : {}),
       body: { x402Version: version, paymentPayload, paymentRequirements },
       maxBytes: 32_000,
     });

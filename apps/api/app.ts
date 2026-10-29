@@ -4,7 +4,7 @@ import { ASSETS } from '../../src/config/assets.js';
 import { CHAINS } from '../../src/config/chains.js';
 import { runQuote } from '../../src/agents/orchestrator.js';
 import { qualityReport } from '../../src/agents/quality-agent.js';
-import { encodeHeader, PAYMENT_RESPONSE_HEADER, PAYMENT_SIGNATURE_HEADER, PAYMENT_REQUIRED_HEADER, X402, type PaymentRequirements } from '../../src/billing/x402.js';
+import { encodeHeader, PAYMENT_RESPONSE_HEADER, PAYMENT_SIGNATURE_HEADER, PAYMENT_REQUIRED_HEADER, X402, type Discovery, type PaymentRequirements } from '../../src/billing/x402.js';
 import { RateLimiter } from '../../src/billing/usage-limits.js';
 import { getTransferStatus } from '../../src/execution/monitor-transaction.js';
 import { prepareTransfer } from '../../src/execution/prepare-transaction.js';
@@ -40,13 +40,13 @@ export function createApp(svc: Services) {
   const x402 = new X402(cfg.x402, svc.fetch, svc.now, svc.nonces);
   const keysRequired = cfg.apiKeys.length > 0 && !x402.enabled;
 
-  /** 402: x402 v1 JSON body (what OpenSea's tool-sdk reads) + base64 x402 v2 PAYMENT-REQUIRED header (Bazaar). */
-  const paymentRequired = (res: ServerResponse, reqs: PaymentRequirements, path: string, base: Record<string, string>, error?: string) => {
-    const body = x402.challenge(reqs.resource, reqs.description, error);
+  /** x402 v2 resource info + Bazaar metadata for a paid HTTP route (402 header, and CDP settle payloads). */
+  const discoveryFor = (path: string, reqs: PaymentRequirements): Discovery => {
     const isTool = path === TOOL_PATH;
     const isPrepare = path === PREPARE_PATH;
-    const v2 = x402.challengeV2(
-      {
+    const extensions = isTool ? bazaarExtension(x402.priceUsdc) : isPrepare ? prepareBazaarExtension() : undefined;
+    return {
+      resource: {
         url: reqs.resource,
         description: isTool ? BAZAAR_DESCRIPTION : isPrepare ? PREPARE_DESCRIPTION : reqs.description,
         mimeType: 'application/json',
@@ -54,9 +54,15 @@ export function createApp(svc: Services) {
         iconUrl: `${cfg.publicBaseUrl}${ICON_PATH}`,
         ...(isTool || isPrepare ? { tags: TOOL_TAGS } : {}),
       },
-      body.error,
-      isTool ? bazaarExtension(x402.priceUsdc) : isPrepare ? prepareBazaarExtension() : undefined,
-    );
+      ...(extensions ? { extensions } : {}),
+    };
+  };
+
+  /** 402: x402 v1 JSON body (what OpenSea's tool-sdk reads) + base64 x402 v2 PAYMENT-REQUIRED header (Bazaar). */
+  const paymentRequired = (res: ServerResponse, reqs: PaymentRequirements, path: string, base: Record<string, string>, error?: string) => {
+    const body = x402.challenge(reqs.resource, reqs.description, error);
+    const d = discoveryFor(path, reqs);
+    const v2 = x402.challengeV2(d.resource, body.error, d.extensions);
     return send(res, 402, body, {
       ...base,
       'x-accept-payment': 'x402',
@@ -320,7 +326,7 @@ export function createApp(svc: Services) {
           const payV2 = header(req, PAYMENT_SIGNATURE_HEADER);
           const pay = payV2 ?? header(req, 'x-payment');
           if (!pay) return paymentRequired(res, paidReqs, path, baseHeaders);
-          verified = await x402.verify(pay, paidReqs, !!payV2);
+          verified = await x402.verify(pay, paidReqs, !!payV2, discoveryFor(path, paidReqs));
           if (!verified.ok) return paymentRequired(res, paidReqs, path, baseHeaders, verified.reason);
         }
       }

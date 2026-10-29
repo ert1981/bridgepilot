@@ -1,6 +1,7 @@
 import { getAddress, isAddress } from 'viem';
 import { CHAINS } from './chains.js';
 import { PAYAI_FACILITATOR_URL } from '../billing/x402.js';
+import { CDP_FACILITATOR_URL, parseCdpSecret, type CdpCredentials } from '../billing/cdp-auth.js';
 
 export type ProviderMode = 'live' | 'simulated';
 export type X402Mode = 'off' | 'facilitator';
@@ -49,6 +50,10 @@ export interface AppConfig {
   x402: {
     mode: X402Mode;
     facilitatorUrl: string;
+    /** 'cdp' only when BOTH CDP_API_KEY_ID and CDP_API_KEY_SECRET are set (needed for Bazaar / agentic.market). */
+    facilitatorKind: 'payai' | 'cdp';
+    /** CDP key pair, in memory only (never logged or returned). */
+    cdp?: CdpCredentials;
     network: string;
     asset: string;
     payTo?: `0x${string}`;
@@ -124,6 +129,21 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     throw new Error('X402_FACILITATOR_URL must use https');
   }
 
+  // CDP Facilitator only when BOTH key env vars are set; otherwise the configured (PayAI) facilitator, unchanged.
+  const cdpKeyId = (env.CDP_API_KEY_ID ?? '').trim();
+  const cdpKeySecret = (env.CDP_API_KEY_SECRET ?? '').trim();
+  let cdp: CdpCredentials | undefined;
+  if (cdpKeyId && cdpKeySecret) {
+    try {
+      parseCdpSecret(cdpKeySecret);
+      cdp = { keyId: cdpKeyId, keySecret: cdpKeySecret };
+    } catch {
+      // Unusable secret: keep serving with the default facilitator rather than failing to start (key never logged).
+      console.warn('CDP_API_KEY_ID/CDP_API_KEY_SECRET set but the secret is not a usable key; using the default facilitator');
+    }
+  }
+  const effectiveFacilitatorUrl = cdp ? CDP_FACILITATOR_URL : facilitatorUrl.endsWith('/') ? facilitatorUrl : `${facilitatorUrl}/`;
+
   const hardMaxSlippageBps = int(env.HARD_MAX_SLIPPAGE_BPS, 300, 1, 5000);
 
   return {
@@ -167,7 +187,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     maxBodyBytes: int(env.MAX_BODY_BYTES, 16_384, 256, 1_048_576),
     x402: {
       mode: x402Mode,
-      facilitatorUrl: facilitatorUrl.endsWith('/') ? facilitatorUrl : `${facilitatorUrl}/`,
+      facilitatorUrl: effectiveFacilitatorUrl,
+      facilitatorKind: cdp ? 'cdp' : 'payai',
+      ...(cdp ? { cdp } : {}),
       network: env.X402_NETWORK ?? 'base',
       asset: env.X402_ASSET ?? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
       payTo: payTo ? getAddress(payTo) : undefined,
