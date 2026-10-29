@@ -138,3 +138,15 @@ e2e پروتکل به `anvil` نیاز دارد (`ANVIL_PATH`) و در نبود 
 
 ## آزمون
 `npm ci && npm run test:3x` — سه دور کامل و سپس ۱۰ اجرای جداگانه e2e (`--e2e-repeats N`) که همه در `test-report.json` ثبت می‌شوند (`run_id`، `status`، `passed`، `complete`، `e2e_stability`). گزارش در آغاز هر اجرا بی‌اعتبار و در هر مسیر خروج به‌روز می‌شود. Foundry (forge و anvil) **الزامی** است؛ نبودن آن یا هر تست skip‌شده اجرا را شکست می‌دهد. `npm run test:3x -- --app-only` فقط تست‌های برنامه را اجرا می‌کند و در خروجی و `test-report.json` (`complete: false`) اعلام می‌کند که تست قراردادها و e2e پروتکل اجرا نشده‌اند.
+
+## Discovery, ERC-8004 and MCP
+
+- `GET /openapi.json`: paid operations carry `x-payment-info` (x402scan discovery); `GET /.well-known/x402` lists them.
+- `GET`/`HEAD` on the paid routes answer the 402 challenge instantly (probes; no provider calls, nothing charged).
+- ERC-8004: `/.well-known/agent-registration.json` (the agentURI) and `/register-8004`, where the owner signs
+  `register(string)` on the Base Identity Registry `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` with their own wallet.
+  After registering, set `ERC8004_AGENT_ID` so the file lists the registration.
+- MCP: `POST /mcp` (streamable HTTP, JSON responses), tool `quote_cross_chain_route`, paid per call with the x402 MCP
+  transport (`_meta["x402/payment"]`). `server.json` is for the official MCP registry (`mcp-publisher publish`),
+  `mcpize.yaml` for MCPize (set `MCP_BILLING=gateway` there only).
+- 402 Index: the public verification hash is served at `/.well-known/402index-verify.txt` (override: `INDEX402_VERIFY`).

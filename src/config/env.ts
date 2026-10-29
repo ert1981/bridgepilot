@@ -65,6 +65,12 @@ export interface AppConfig {
   storagePath?: string;
   circuit: { failureThreshold: number; cooldownMs: number };
   approvalGasUnits: bigint;
+  /** ERC-8004 agentId after the owner registered in the Identity Registry (listed in agent-registration.json). */
+  erc8004AgentId?: string;
+  /** 402index.io domain verification hash override (served at /.well-known/402index-verify.txt). */
+  index402Verify?: string;
+  /** "gateway" only inside an MCPize-hosted container: the gateway bills tool calls, /mcp does not charge again. */
+  mcpBilling: 'x402' | 'gateway';
 }
 
 const LIFI_DIAMOND = '0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae';
@@ -175,5 +181,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     approvalGasUnits: BigInt(int(env.APPROVAL_GAS_UNITS, 55_000, 21_000, 1_000_000)),
     publicBaseUrl: (env.PUBLIC_BASE_URL || 'http://localhost:8080').replace(/\/+$/, ''),
     toolCreatorAddress: toolCreator ? toolCreator.toLowerCase() : undefined,
+    erc8004AgentId: /^[0-9]{1,30}$/.test((env.ERC8004_AGENT_ID ?? '').trim()) ? env.ERC8004_AGENT_ID!.trim() : undefined,
+    index402Verify: /^[A-Za-z0-9_-]{8,200}$/.test((env.INDEX402_VERIFY ?? '').trim()) ? env.INDEX402_VERIFY!.trim() : undefined,
+    mcpBilling: (env.MCP_BILLING ?? '').trim().toLowerCase() === 'gateway' ? 'gateway' : 'x402',
   };
 }

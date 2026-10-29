@@ -1,0 +1,11 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ert1981/bridgepilot",
+  "title": "BridgePilot",
+  "description": "Cross-chain bridge route quotes from LI.FI and Across with net USD value, paid per call via x402.",
+  "version": "1.0.0",
+  "websiteUrl": "https://bridgepilot.onrender.com/",
+  "repository": {"url": "https://github.com/ert1981/bridgepilot", "source": "github"},
+  "icons": [{"src": "https://bridgepilot.onrender.com/static/icon.png", "mimeType": "image/png", "sizes": ["512x512"]}],
+  "remotes": [{"type": "streamable-http", "url": "https://bridgepilot.onrender.com/mcp"}]
+}

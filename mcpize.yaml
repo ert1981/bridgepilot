@@ -1,0 +1,33 @@
+# MCPize deployment config (https://mcpize.com/docs). NOT published yet: needs `mcpize login` + `mcpize deploy`.
+#
+# Billing: MCPize's gateway charges each tools/call with x402 (pricing below) and forwards it to this
+# container. Set MCP_BILLING=gateway in the MCPize env so the server does not charge a second time.
+# Never set it on the public Render service (https://bridgepilot.onrender.com/mcp keeps its own x402
+# pay-per-call per the x402 MCP transport).
+version: 1
+name: bridgepilot
+description: Cross-chain bridge route quotes (LI.FI, Across) with net USD value and deterministic safety filters.
+runtime: container
+build:
+  dockerfile: Dockerfile
+startCommand:
+  type: http
+  command: node dist/apps/api/server.js
+configSchema:
+  source: code
+secrets:
+  - name: MCP_BILLING
+    required: true
+    description: Must be "gateway" when hosted on MCPize (the gateway bills; avoids double charging)
+  - name: PROVIDER_MODE
+    required: true
+    description: live
+pricing:
+  protocol: x402
+  network: base          # base-sepolia for testing
+  recipient: "0x93714D5970f511Ac22f0E5635D3fBF538f717cd4"
+  asset: usdc
+  tools:
+    - name: quote_cross_chain_route
+      price: "0.01"
+      description: Best cross-chain route among LI.FI and Across quotes, with alternatives and net USD value

@@ -47,3 +47,17 @@ export function header(req: IncomingMessage, name: string): string | undefined {
   const v = req.headers[name.toLowerCase()];
   return Array.isArray(v) ? v[0] : v;
 }
+
+/** Raw UTF-8 body (JSON-RPC on /mcp: parse errors must become JSON-RPC errors, not HTTP 400 envelopes). */
+export async function readText(req: IncomingMessage, maxBytes: number): Promise<string> {
+  const declared = Number(req.headers['content-length'] ?? 0);
+  if (declared > maxBytes) throw new ApiError(413, 'PAYLOAD_TOO_LARGE', `Body exceeds ${maxBytes} bytes.`);
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > maxBytes) throw new ApiError(413, 'PAYLOAD_TOO_LARGE', `Body exceeds ${maxBytes} bytes.`);
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}

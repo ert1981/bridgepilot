@@ -1,4 +1,7 @@
 import type { AppConfig } from '../../src/config/env.js';
+import { atomicToUsdc } from '../../src/billing/x402.js';
+import { PREPARE_DESCRIPTION, PREPARE_EXAMPLE, PREPARE_OUTPUTS, prepareInputs, X402_GUIDANCE } from './discovery.js';
+import { BAZAAR_DESCRIPTION, QUOTE_EXAMPLE, TOOL_INPUTS, TOOL_OUTPUTS } from './opensea-tool.js';
 
 export const VERSION = '1.0.0';
 
@@ -83,15 +86,42 @@ export function manifest(cfg: AppConfig) {
   };
 }
 
+/** x402scan `x-payment-info` for a paid operation (USD decimal price), or nothing when x402 is off. */
+function paymentInfo(cfg: AppConfig, path: string) {
+  if (cfg.x402.mode !== 'facilitator' || !cfg.x402.paidPaths.includes(path)) return {};
+  return { 'x-payment-info': { price: { mode: 'fixed', currency: 'USD', amount: atomicToUsdc(cfg.x402.priceAtomic) }, protocols: [{ x402: {} }] } };
+}
+
+const payment402 = {
+  description: 'Payment Required: x402 v1 challenge in the body, v2 in the PAYMENT-REQUIRED header',
+  headers: { 'PAYMENT-REQUIRED': { schema: { type: 'string' }, description: 'base64 JSON x402 v2 PaymentRequired' } },
+  content: { 'application/json': { schema: { type: 'object', properties: { x402Version: { type: 'integer' }, error: { type: 'string' }, accepts: { type: 'array', items: { type: 'object' } } } } } },
+};
+
 export function openapi(cfg: AppConfig) {
   const err = { $ref: '#/components/schemas/Error' };
+  const json = (schema: unknown, example?: unknown) => ({ 'application/json': { schema, ...(example ? { example } : {}) } });
   return {
     openapi: '3.1.0',
-    info: { title: 'BridgePilot API', version: VERSION },
+    info: { title: 'BridgePilot API', version: VERSION, description: 'Cross-chain route optimizer for AI agents (LI.FI, Across). Non-custodial.', 'x-guidance': X402_GUIDANCE, contact: { name: 'BridgePilot', url: cfg.publicBaseUrl } },
     servers: [{ url: cfg.publicBaseUrl }],
     paths: {
-      '/v1/routes/quote': { post: { requestBody: { content: { 'application/json': { schema: quoteInputSchema } } }, responses: { 200: { description: 'Quote result' }, 400: err, 402: { description: 'Payment required (x402)' }, 429: err } } },
-      '/v1/routes/prepare': { post: { responses: { 200: { description: 'Unsigned transactions' }, 409: err, 422: err } } },
+      '/v1/routes/quote': {
+        post: {
+          operationId: 'quoteCrossChainRoute', summary: 'Best cross-chain route quote', description: BAZAAR_DESCRIPTION,
+          ...paymentInfo(cfg, '/v1/routes/quote'),
+          requestBody: { required: true, content: json(TOOL_INPUTS, QUOTE_EXAMPLE) },
+          responses: { 200: { description: 'Quote result', content: json(TOOL_OUTPUTS) }, 400: err, 402: payment402, 429: err },
+        },
+      },
+      '/v1/routes/prepare': {
+        post: {
+          operationId: 'prepareCrossChainTransfer', summary: 'Unsigned transactions for a chosen route', description: PREPARE_DESCRIPTION,
+          ...paymentInfo(cfg, '/v1/routes/prepare'),
+          requestBody: { required: true, content: json(prepareInputs(), PREPARE_EXAMPLE) },
+          responses: { 200: { description: 'Unsigned transactions', content: json(PREPARE_OUTPUTS) }, 400: err, 402: payment402, 409: err, 422: err },
+        },
+      },
       '/v1/routes/status/{id}': { get: { parameters: [{ name: 'id', in: 'path', required: true }, { name: 'tx_hash', in: 'query' }], responses: { 200: { description: 'Status' }, 404: err } } },
       '/v1/assets': { get: { responses: { 200: { description: 'Supported assets' } } } },
       '/health': { get: { responses: { 200: { description: 'OK' } } } },
