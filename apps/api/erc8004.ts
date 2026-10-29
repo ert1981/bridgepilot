@@ -75,19 +75,54 @@ const TOPIC = "0xca52e62c367d81bb2e328eb795f7c7ba24afb478408a26c0e201d155c449bc4
 const DEPLOY_BLOCK = "0x27bbd27";
 const KNOWN_ID = C.agentId;
 const LS = "erc8004-reg-" + AGENT_URI;
-let account = null, chainOk = false, dupBlock = false, dupFound = false;
+let eth = null, account = null, chainOk = false, dupBlock = false, dupFound = false, busy = false, listening = false;
 const $ = (id) => document.getElementById(id);
-const eth = window.ethereum;
 function setStatus(html){ $("status").innerHTML = html; }
-function fmtEth(wei){ return (Number(wei) / 1e18).toFixed(9); }
-function txLink(h){ return '<a target="_blank" rel="noopener" href="https://basescan.org/tx/' + h + '">' + h + '</a>'; }
-function nftLink(id){ return '<a target="_blank" rel="noopener" href="https://basescan.org/nft/' + REGISTRY + '/' + id + '">#' + id + '</a>'; }
 function esc(s){ return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function errMsg(e){ return esc(e && e.code === 4001 ? "لغو شد · Rejected in wallet" : (e && e.message ? e.message : e)); }
+function fmtEth(wei){ return (Number(wei) / 1e18).toFixed(9); }
+function txLink(h){ return '<a target="_blank" rel="noopener" href="https://basescan.org/tx/' + esc(h) + '">' + esc(h) + '</a>'; }
+function nftLink(id){ return '<a target="_blank" rel="noopener" href="https://basescan.org/nft/' + REGISTRY + '/' + esc(id) + '">#' + esc(id) + '</a>'; }
 function decodeUri(data){
   try { const h = data.slice(2); const len = parseInt(h.slice(64, 128), 16); const hex = h.slice(128, 128 + len * 2);
     const bytes = new Uint8Array(hex.match(/../g).map(b => parseInt(b, 16))); return new TextDecoder().decode(bytes);
   } catch (e) { return "?"; }
 }
+/** Wallet calls that never need a user prompt get a timeout, so a slow wallet RPC never freezes the page. */
+function call(method, params, ms){
+  const p = eth.request(params ? { method, params } : { method });
+  if (!ms) return p;
+  return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("timeout (" + method + ")")), ms))]);
+}
+
+// Wallet discovery: window.ethereum (also when injected late), EIP-6963 announcements, multi-provider arrays.
+const announced = [];
+window.addEventListener("eip6963:announceProvider", (ev) => { if (ev && ev.detail && ev.detail.provider) announced.push(ev.detail); });
+function pickProvider(){
+  const w = window.ethereum;
+  if (w && Array.isArray(w.providers) && w.providers.length) return w.providers.find(p => p.isMetaMask) || w.providers.find(p => p.isCoinbaseWallet) || w.providers[0];
+  if (w && typeof w.request === "function") return w;
+  if (announced.length) return (announced.find(d => /metamask/i.test(d.info && d.info.rdns || "")) || announced[0]).provider;
+  return null;
+}
+async function findProvider(waitMs){
+  try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch (e) {}
+  const end = Date.now() + waitMs;
+  for (;;) { const p = pickProvider(); if (p || Date.now() >= end) return p; await new Promise(r => setTimeout(r, 150)); }
+}
+function noWallet(){
+  const here = location.host + location.pathname;
+  setStatus('<span class="err">کیف‌پول مرورگر پیدا نشد.</span> این صفحه را داخل مرورگرِ اپ MetaMask یا Coinbase Wallet باز کن، یا در مرورگر دسکتاپ با افزونه‌ی MetaMask/Coinbase Wallet.<br>' +
+    '<span class="en">No browser wallet found. Open this page inside the MetaMask or Coinbase Wallet app browser, or in a desktop browser with the MetaMask / Coinbase Wallet extension.</span><br>' +
+    '<a href="https://metamask.app.link/dapp/' + esc(here) + '">Open in MetaMask</a> · <a href="https://go.cb-w.com/dapp?cb_url=' + encodeURIComponent(location.href) + '">Open in Coinbase Wallet</a>');
+}
+function listen(){
+  if (listening || !eth || typeof eth.on !== "function") return;
+  listening = true;
+  eth.on("accountsChanged", () => refresh().catch(showErr));
+  eth.on("chainChanged", () => refresh().catch(showErr));
+}
+function showErr(e){ setStatus('<span class="err">' + errMsg(e) + "</span>"); }
 
 async function checkDuplicates(){
   const out = [];
@@ -97,106 +132,120 @@ async function checkDuplicates(){
   if (prev) { out.push("قبلاً از این مرورگر ارسال شده · Already sent from this browser: " + txLink(prev)); dupFound = true; }
   try {
     const data = "0x70a08231" + account.slice(2).toLowerCase().padStart(64, "0");
-    const bal = BigInt(await eth.request({ method: "eth_call", params: [{ to: REGISTRY, data }, "latest"] }));
+    const bal = BigInt(await call("eth_call", [{ to: REGISTRY, data }, "latest"], 10000));
     if (bal > 0n) { out.push("این کیف‌پول همین حالا " + bal + " عامل ERC-8004 دارد · This wallet already owns " + bal + " ERC-8004 agent(s)."); dupFound = true; }
-  } catch (e) { out.push("بررسی موجودی ممکن نشد · balanceOf check failed: " + (e && e.message ? e.message : e)); }
-  try {
-    const logs = await eth.request({ method: "eth_getLogs", params: [{ address: REGISTRY, fromBlock: DEPLOY_BLOCK, toBlock: "latest",
-      topics: [TOPIC, null, "0x" + account.slice(2).toLowerCase().padStart(64, "0")] }] });
+    else out.push('<span class="ok">این کیف‌پول هنوز عاملی ندارد · This wallet owns no ERC-8004 agent yet.</span>');
+  } catch (e) { out.push("بررسی موجودی ممکن نشد · balanceOf check failed: " + errMsg(e)); }
+  $("dup").innerHTML = out.join("<br>") + '<br><small id="logscan">جست‌وجوی ثبت‌های قبلی… · Scanning earlier registrations…</small>';
+  // Best effort, in the background: many wallet RPCs refuse or stall on an 11M-block log range.
+  call("eth_getLogs", [{ address: REGISTRY, fromBlock: DEPLOY_BLOCK, toBlock: "latest",
+    topics: [TOPIC, null, "0x" + account.slice(2).toLowerCase().padStart(64, "0")] }], 12000).then((logs) => {
+    const lines = [];
     for (const l of logs || []) {
-      const uri = decodeUri(l.data), id = BigInt(l.topics[1]).toString();
-      const same = uri === AGENT_URI;
-      out.push((same ? '<span class="err">همین آدرس قبلاً ثبت شده · Same agentURI already registered</span> ' : "") + "agent " + nftLink(id) + " → " + esc(uri));
-      if (same) dupBlock = true; else dupFound = true;
+      const uri = decodeUri(l.data), id = BigInt(l.topics[1]).toString(), same = uri === AGENT_URI;
+      lines.push((same ? '<span class="err">همین آدرس قبلاً ثبت شده · Same agentURI already registered</span> ' : "") + "agent " + nftLink(id) + " → " + esc(uri));
+      if (same) { dupBlock = true; $("register").disabled = true; } else dupFound = true;
     }
-    if (!logs || !logs.length) out.push('<span class="ok">ثبت قبلی از این کیف‌پول پیدا نشد · No earlier registration by this wallet found.</span>');
-  } catch (e) { out.push("جست‌وجوی رویدادهای قبلی ممکن نشد (RPC کیف‌پول محدودیت دارد) · Could not scan earlier Registered events: " + (e && e.message ? e.message : e)); }
-  $("dup").innerHTML = out.join("<br>");
+    $("logscan").innerHTML = lines.length ? lines.join("<br>") : '<span class="ok">ثبت قبلی از این کیف‌پول پیدا نشد · No earlier registration by this wallet found.</span>';
+  }).catch((e) => { const el = $("logscan"); if (el) el.innerHTML = "جست‌وجوی رویدادهای قبلی ممکن نشد (محدودیت RPC کیف‌پول) · Could not scan earlier Registered events: " + errMsg(e); });
 }
 
 async function refresh(){
   if (!eth) return;
-  const accts = await eth.request({ method: "eth_accounts" });
-  account = accts[0] || null;
-  const chainId = await eth.request({ method: "eth_chainId" });
-  chainOk = String(chainId).toLowerCase() === CHAIN_HEX;
+  const accts = await call("eth_accounts", null, 10000);
+  account = (accts && accts[0]) || null;
+  const chainId = String(await call("eth_chainId", null, 10000));
+  chainOk = chainId.toLowerCase() === CHAIN_HEX;
   $("switch").disabled = !account || chainOk;
-  let s = account ? "حساب · Account: " + account : "وصل نیست · Not connected";
-  s += "<br>شبکه · Network: " + (chainOk ? '<span class="ok">Base ✓</span>' : '<span class="warn">' + chainId + ' (not Base)</span>');
-  if (account && chainOk) {
-    try { const bal = await eth.request({ method: "eth_getBalance", params: [account, "latest"] });
-      s += "<br>موجودی · Balance: " + fmtEth(BigInt(bal)) + " ETH";
-      if (BigInt(bal) === 0n) s += ' <span class="err">— برای گس کمی ETH روی Base لازم است · you need a little ETH on Base for gas</span>';
-    } catch (e) {}
-  }
+  let s = account ? "حساب · Account: " + esc(account) : "وصل نیست · Not connected";
+  s += "<br>شبکه · Network: " + (chainOk ? '<span class="ok">Base ✓</span>' : '<span class="warn">' + esc(chainId) + ' (not Base) — دکمه‌ی «رفتن به شبکه‌ی Base» را بزن · press "Switch to Base"</span>');
   setStatus(s);
-  const mismatch = account && account.toLowerCase() !== OWNER.toLowerCase();
+  if (account && chainOk) {
+    call("eth_getBalance", [account, "latest"], 10000).then((bal) => {
+      let b = "<br>موجودی · Balance: " + fmtEth(BigInt(bal)) + " ETH";
+      if (BigInt(bal) === 0n) b += ' <span class="err">— برای گس کمی ETH روی Base لازم است · you need a little ETH on Base for gas</span>';
+      setStatus(s + b);
+    }).catch(() => {});
+  }
+  const mismatch = !!account && account.toLowerCase() !== OWNER.toLowerCase();
   $("acctWarn").innerHTML = mismatch ? "هشدار: این حساب با مالک مورد انتظار یکی نیست؛ حساب " + OWNER + " را انتخاب کن.<br><span class='en'>Warning: connected account differs from the expected owner " + OWNER + ". The agent NFT would belong to this other account.</span>" : "";
   $("register").disabled = true;
   if (account && chainOk) {
     await checkDuplicates();
-    $("register").disabled = mismatch || dupBlock;
+    $("register").disabled = busy || mismatch || dupBlock;
     if (!mismatch && !dupBlock) estimate();
-  }
+  } else $("dup").innerHTML = "";
 }
 
 async function estimate(){
   try {
-    const [gas, price] = await Promise.all([
-      eth.request({ method: "eth_estimateGas", params: [{ from: account, to: REGISTRY, data: CALLDATA }] }),
-      eth.request({ method: "eth_gasPrice" })]);
+    const [gas, price] = await Promise.all([call("eth_estimateGas", [{ from: account, to: REGISTRY, data: CALLDATA }], 15000), call("eth_gasPrice", null, 10000)]);
     const wei = BigInt(gas) * BigInt(price);
     $("est").innerHTML = "<small>Estimated gas: " + BigInt(gas) + " × " + (Number(BigInt(price)) / 1e9).toFixed(4) + " gwei ≈ " + fmtEth(wei) + " ETH (plus a tiny L1 data fee)</small>";
-  } catch (e) { $("est").innerHTML = '<small class="err">Simulation failed: ' + (e && e.message ? e.message : e) + "</small>"; }
+  } catch (e) { $("est").innerHTML = '<small class="err">Simulation failed: ' + errMsg(e) + "</small>"; }
 }
 
 $("register").onclick = async () => {
   const btn = $("register"), res = $("res");
+  if (!eth || !account) { res.innerHTML = '<span class="err">اول کیف‌پول را وصل کن · Connect your wallet first.</span>'; return; }
   if (dupFound && !confirm("ثبت قبلی پیدا شد. دوباره ثبت شود (عامل تکراری)؟\nAn earlier registration was found. Register again (duplicate agent)?")) return;
-  btn.disabled = true;
+  btn.disabled = true; busy = true;
+  res.innerHTML = "در انتظار تأیید در کیف‌پول… · Confirm the transaction in your wallet…";
   try {
-    const hash = await eth.request({ method: "eth_sendTransaction", params: [{ from: account, to: REGISTRY, data: CALLDATA, value: "0x0" }] });
+    const hash = await call("eth_sendTransaction", [{ from: account, to: REGISTRY, data: CALLDATA, value: "0x0" }]);
     localStorage.setItem(LS, hash);
     res.innerHTML = "ارسال شد، در انتظار تأیید · Sent, waiting for confirmation: " + txLink(hash);
     for (let i = 0; i < 100; i++) {
       await new Promise(r => setTimeout(r, 3000));
-      const rc = await eth.request({ method: "eth_getTransactionReceipt", params: [hash] });
+      let rc = null;
+      try { rc = await call("eth_getTransactionReceipt", [hash], 10000); } catch (e) { continue; }
       if (!rc) continue;
-      if (rc.status !== "0x1") { res.innerHTML = '<span class="err">تراکنش ناموفق · Transaction failed</span> ' + txLink(hash); btn.disabled = false; return; }
+      if (rc.status !== "0x1") { res.innerHTML = '<span class="err">تراکنش ناموفق · Transaction failed</span> ' + txLink(hash); btn.disabled = false; busy = false; return; }
       const log = (rc.logs || []).find(l => l.address.toLowerCase() === REGISTRY.toLowerCase() && l.topics[0] === TOPIC);
       const id = log ? BigInt(log.topics[1]).toString() : "?";
       localStorage.setItem(LS + "-id", id);
       res.innerHTML = '<span class="ok">ثبت شد ✓ · Registered ✓</span> agentId: <b id="agentId">' + id + "</b> " + (id !== "?" ? nftLink(id) : "") + "<br>" + txLink(hash) +
         "<br>Render env: <code>" + C.env + "=" + id + "</code>";
+      busy = false;
       return;
     }
     res.innerHTML += "<br>هنوز تأیید نشده؛ Basescan را چک کن · Not confirmed yet, check Basescan.";
   } catch (e) {
-    res.innerHTML = '<span class="err">' + (e && e.code === 4001 ? "لغو شد · Rejected in wallet" : (e && e.message ? e.message : e)) + "</span>";
+    res.innerHTML = '<span class="err">' + errMsg(e) + "</span>";
     btn.disabled = false;
   }
+  busy = false;
 };
 $("connect").onclick = async () => {
-  if (!eth) { setStatus('<span class="err">کیف‌پول مرورگر پیدا نشد · No browser wallet found (window.ethereum).</span>'); return; }
-  try { await eth.request({ method: "eth_requestAccounts" }); } catch (e) { setStatus('<span class="err">' + e.message + "</span>"); return; }
-  await refresh();
+  setStatus("در حال پیدا کردن کیف‌پول… · Looking for a browser wallet…");
+  eth = eth || await findProvider(1500);
+  if (!eth) { noWallet(); return; }
+  listen();
+  setStatus("در انتظار تأیید اتصال در کیف‌پول… · Approve the connection in your wallet…");
+  try { await call("eth_requestAccounts"); await refresh(); } catch (e) { showErr(e); }
 };
 $("switch").onclick = async () => {
-  try { await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: CHAIN_HEX }] }); }
+  if (!eth) { noWallet(); return; }
+  setStatus("در انتظار تأیید تغییر شبکه در کیف‌پول… · Approve the network switch in your wallet…");
+  try { await call("wallet_switchEthereumChain", [{ chainId: CHAIN_HEX }]); }
   catch (e) {
     if (e && (e.code === 4902 || (e.data && e.data.originalError && e.data.originalError.code === 4902))) {
-      await eth.request({ method: "wallet_addEthereumChain", params: [{ chainId: CHAIN_HEX, chainName: "Base",
-        nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: ["https://mainnet.base.org"], blockExplorerUrls: ["https://basescan.org"] }] });
-    } else { setStatus('<span class="err">' + (e && e.message ? e.message : e) + "</span>"); }
+      try {
+        await call("wallet_addEthereumChain", [{ chainId: CHAIN_HEX, chainName: "Base",
+          nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: ["https://mainnet.base.org"], blockExplorerUrls: ["https://basescan.org"] }]);
+      } catch (e2) { showErr(e2); return; }
+    } else { showErr(e); return; }
   }
-  await refresh();
+  try { await refresh(); } catch (e) { showErr(e); }
 };
-if (eth) { eth.on && eth.on("accountsChanged", refresh); eth.on && eth.on("chainChanged", refresh); refresh(); }
-else setStatus("کیف‌پول مرورگر پیدا نشد · No browser wallet detected");
+findProvider(2000).then((p) => {
+  if (!p) { setStatus("کیف‌پول مرورگر هنوز پیدا نشد؛ «اتصال کیف‌پول» را بزن · No browser wallet detected yet — press Connect wallet."); return; }
+  eth = p; listen(); refresh().catch(showErr);
+});
 `;
 
 export const SCRIPT_8004_CSP_HASH = `'sha256-${createHash('sha256').update(SCRIPT).digest('base64')}'`;
-export const REGISTER_8004_CSP = `default-src 'none'; style-src 'unsafe-inline'; script-src ${SCRIPT_8004_CSP_HASH}; connect-src 'none'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
+export const REGISTER_8004_CSP = `default-src 'none'; style-src 'unsafe-inline'; script-src ${SCRIPT_8004_CSP_HASH}; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
 
 export function register8004Page(cfg: AppConfig): string {
   const uri = agentUri(cfg);
@@ -210,6 +259,7 @@ export function register8004Page(cfg: AppConfig): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>${NAME} · Register in the ERC-8004 Identity Registry (Base)</title>
+<link rel="icon" href="/static/icon.png">
 <style>
  body{font-family:system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;background:#0f1115;color:#e8e8ea;margin:0;padding:24px;line-height:1.6}
  main{max-width:760px;margin:0 auto}

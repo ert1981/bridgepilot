@@ -184,6 +184,10 @@ describe('ERC-8004', () => {
     expect(html).toContain(IDENTITY_REGISTRY);
     expect(html).toContain(REZA);
     expect(html).not.toMatch(/__[A-Z_]+__/);
+    expect(html).toContain('eip6963:requestProvider');
+    expect(html).toContain('Open in MetaMask');
+    // same CSP pattern as /register-onchain (wallet calls go through the injected provider)
+    expect(r.headers.get('content-security-policy')).not.toContain('connect-src');
     expect(r.headers.get('content-security-policy')).toContain(SCRIPT_8004_CSP_HASH);
     const script = html.match(/<script>([\s\S]*?)<\/script>/)![1]!;
     expect(`'sha256-${createHash('sha256').update(script).digest('base64')}'`).toBe(SCRIPT_8004_CSP_HASH);

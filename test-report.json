@@ -1,7 +1,7 @@
 {
-  "run_id": "e5ffca73-42a7-485c-aa43-59ada32418e3",
-  "started_at": "2026-10-29T19:03:06.161Z",
-  "generated_at": "2026-10-29T19:07:39.581Z",
+  "run_id": "20f27544-24d6-4494-b7b5-97f2641a5601",
+  "started_at": "2026-10-29T19:54:27.264Z",
+  "generated_at": "2026-10-29T19:59:02.875Z",
   "status": "finished",
   "passed": true,
   "complete": true,
@@ -11,7 +11,7 @@
   "rounds": [
     {
       "round": 1,
-      "seed": 858797,
+      "seed": 247970,
       "ok": true,
       "steps": [
         {
@@ -20,7 +20,7 @@
           "summary": "ok",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 8.452
+          "seconds": 8.108
         },
         {
           "name": "build",
@@ -28,7 +28,7 @@
           "summary": "ok",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 4.505
+          "seconds": 4.353
         },
         {
           "name": "vitest",
@@ -36,7 +36,7 @@
           "summary": "Tests  211 passed (211)",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 16.71
+          "seconds": 16.88
         },
         {
           "name": "forge (unit+fuzz+invariant)",
@@ -44,13 +44,13 @@
           "summary": "67 tests passed, 0 failed, 0 skipped (67 total tests)",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 3.44
+          "seconds": 3.592
         }
       ]
     },
     {
       "round": 2,
-      "seed": 848937,
+      "seed": 859998,
       "ok": true,
       "steps": [
         {
@@ -59,7 +59,7 @@
           "summary": "ok",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 8.532
+          "seconds": 9.168
         },
         {
           "name": "build",
@@ -67,7 +67,7 @@
           "summary": "ok",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 4.966
+          "seconds": 4.583
         },
         {
           "name": "vitest",
@@ -75,7 +75,7 @@
           "summary": "Tests  211 passed (211)",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 17.575
+          "seconds": 16.967
         },
         {
           "name": "forge (unit+fuzz+invariant)",
@@ -83,13 +83,13 @@
           "summary": "67 tests passed, 0 failed, 0 skipped (67 total tests)",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 3.243
+          "seconds": 3.87
         }
       ]
     },
     {
       "round": 3,
-      "seed": 993107,
+      "seed": 2220,
       "ok": true,
       "steps": [
         {
@@ -98,7 +98,7 @@
           "summary": "ok",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 8.206
+          "seconds": 8.76
         },
         {
           "name": "build",
@@ -106,7 +106,7 @@
           "summary": "ok",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 4.164
+          "seconds": 4.91
         },
         {
           "name": "vitest",
@@ -114,7 +114,7 @@
           "summary": "Tests  211 passed (211)",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 16.868
+          "seconds": 17.16
         },
         {
           "name": "forge (unit+fuzz+invariant)",
@@ -122,7 +122,7 @@
           "summary": "67 tests passed, 0 failed, 0 skipped (67 total tests)",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 3.543
+          "seconds": 3.319
         }
       ]
     }
@@ -134,93 +134,93 @@
     "runs": [
       {
         "run": 1,
-        "id": "7a1cc094-142d-401c-a96b-a6d6f9732ef9",
-        "at": "2026-10-29T19:05:04.407Z",
+        "id": "2416e504-f61b-44ec-b4d3-3708ff4e4e6c",
+        "at": "2026-10-29T19:56:31.557Z",
         "ok": true,
         "summary": "Tests  35 passed (35)",
         "failed_tests": [],
-        "seconds": 17.339
+        "seconds": 16.749
       },
       {
         "run": 2,
-        "id": "c32d10b4-53cd-44c7-9d5f-3fcd9e572206",
-        "at": "2026-10-29T19:05:21.392Z",
+        "id": "ae67e30b-3285-400a-8f53-28f31e8668e4",
+        "at": "2026-10-29T19:56:48.456Z",
         "ok": true,
         "summary": "Tests  35 passed (35)",
         "failed_tests": [],
-        "seconds": 16.984
+        "seconds": 16.899
       },
       {
         "run": 3,
-        "id": "61d8d1d6-c262-4fa0-bb44-339d53cc585a",
-        "at": "2026-10-29T19:05:38.316Z",
+        "id": "4af588af-774c-424e-8bfd-a19a39fd9220",
+        "at": "2026-10-29T19:57:05.185Z",
         "ok": true,
         "summary": "Tests  35 passed (35)",
         "failed_tests": [],
-        "seconds": 16.924
+        "seconds": 16.728
       },
       {
         "run": 4,
-        "id": "a0964ce7-3be1-4992-8775-45c2ca20a216",
-        "at": "2026-10-29T19:05:55.602Z",
+        "id": "6efb9418-84cc-4243-ae5c-26ac682e1af9",
+        "at": "2026-10-29T19:57:22.157Z",
         "ok": true,
         "summary": "Tests  35 passed (35)",
         "failed_tests": [],
-        "seconds": 17.286
+        "seconds": 16.972
       },
       {
         "run": 5,
-        "id": "cc7a4451-d74a-43ba-b258-64cbb8a3eb6b",
-        "at": "2026-10-29T19:06:12.872Z",
+        "id": "1962ca9c-1d34-48ed-9737-f1a5e89538bc",
+        "at": "2026-10-29T19:57:38.875Z",
         "ok": true,
         "summary": "Tests  35 passed (35)",
         "failed_tests": [],
-        "seconds": 17.27
+        "seconds": 16.717
       },
       {
         "run": 6,
-        "id": "463f514d-8fcf-42bb-9edf-dac8a1eab26e",
-        "at": "2026-10-29T19:06:30.128Z",
+        "id": "17f6d5b8-1640-4206-98e4-078774e09136",
+        "at": "2026-10-29T19:57:55.632Z",
         "ok": true,
         "summary": "Tests  35 passed (35)",
         "failed_tests": [],
-        "seconds": 17.255
+        "seconds": 16.757
       },
       {
         "run": 7,
-        "id": "4777290f-06a3-449f-8652-751d81f1c1a0",
-        "at": "2026-10-29T19:06:47.383Z",
+        "id": "34bc861a-14ae-46f1-a2cf-00db9a15729c",
+        "at": "2026-10-29T19:58:12.350Z",
         "ok": true,
         "summary": "Tests  35 passed (35)",
         "failed_tests": [],
-        "seconds": 17.255
+        "seconds": 16.718
       },
       {
         "run": 8,
-        "id": "fa8c4396-a312-42d1-87e7-2c484bfffc5a",
-        "at": "2026-10-29T19:07:04.530Z",
+        "id": "435d696c-9117-460b-b5b9-00049b5e03b0",
+        "at": "2026-10-29T19:58:29.131Z",
         "ok": true,
         "summary": "Tests  35 passed (35)",
         "failed_tests": [],
-        "seconds": 17.147
+        "seconds": 16.781
       },
       {
         "run": 9,
-        "id": "512bb3d5-a875-474e-84bc-4d4150b06600",
-        "at": "2026-10-29T19:07:22.123Z",
+        "id": "73904826-9c00-4ca4-ad30-c69d6af2072f",
+        "at": "2026-10-29T19:58:46.167Z",
         "ok": true,
         "summary": "Tests  35 passed (35)",
         "failed_tests": [],
-        "seconds": 17.592
+        "seconds": 17.036
       },
       {
         "run": 10,
-        "id": "f78d54ad-e80a-42af-9fbb-5f73fd0b3d10",
-        "at": "2026-10-29T19:07:39.580Z",
+        "id": "5fd0a85c-c085-414f-a19c-71862775b091",
+        "at": "2026-10-29T19:59:02.875Z",
         "ok": true,
         "summary": "Tests  35 passed (35)",
         "failed_tests": [],
-        "seconds": 17.457
+        "seconds": 16.706
       }
     ]
   }
