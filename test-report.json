@@ -1,17 +1,17 @@
 {
-  "run_id": "11dbdfeb-b64e-4edc-8b6a-1528e43db461",
-  "started_at": "2026-10-29T17:32:12.684Z",
-  "generated_at": "2026-10-29T17:33:51.524Z",
-  "status": "running",
-  "passed": false,
-  "complete": false,
+  "run_id": "b173dade-7bb5-4d7a-a4c1-3f71a5f04d77",
+  "started_at": "2026-10-29T17:44:05.664Z",
+  "generated_at": "2026-10-29T17:48:30.339Z",
+  "status": "finished",
+  "passed": true,
+  "complete": true,
   "mode": "full",
   "contracts_tested": true,
   "protocol_e2e_tested": true,
   "rounds": [
     {
       "round": 1,
-      "seed": 405004,
+      "seed": 828590,
       "ok": true,
       "steps": [
         {
@@ -20,7 +20,7 @@
           "summary": "ok",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 8.838
+          "seconds": 9.635
         },
         {
           "name": "build",
@@ -28,15 +28,15 @@
           "summary": "ok",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 4.647
+          "seconds": 5.185
         },
         {
           "name": "vitest",
           "ok": true,
-          "summary": "Tests  177 passed (177)",
+          "summary": "Tests  193 passed (193)",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 16.775
+          "seconds": 16.792
         },
         {
           "name": "forge (unit+fuzz+invariant)",
@@ -44,13 +44,13 @@
           "summary": "67 tests passed, 0 failed, 0 skipped (67 total tests)",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 3.164
+          "seconds": 3.101
         }
       ]
     },
     {
       "round": 2,
-      "seed": 202439,
+      "seed": 415774,
       "ok": true,
       "steps": [
         {
@@ -59,7 +59,7 @@
           "summary": "ok",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 8.393
+          "seconds": 7.875
         },
         {
           "name": "build",
@@ -67,15 +67,15 @@
           "summary": "ok",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 4.453
+          "seconds": 4.213
         },
         {
           "name": "vitest",
           "ok": true,
-          "summary": "Tests  177 passed (177)",
+          "summary": "Tests  193 passed (193)",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 17.163
+          "seconds": 16.576
         },
         {
           "name": "forge (unit+fuzz+invariant)",
@@ -83,13 +83,13 @@
           "summary": "67 tests passed, 0 failed, 0 skipped (67 total tests)",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 3.211
+          "seconds": 3.151
         }
       ]
     },
     {
       "round": 3,
-      "seed": 59555,
+      "seed": 929490,
       "ok": true,
       "steps": [
         {
@@ -98,7 +98,7 @@
           "summary": "ok",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 7.989
+          "seconds": 7.605
         },
         {
           "name": "build",
@@ -106,15 +106,15 @@
           "summary": "ok",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 4.095
+          "seconds": 4.316
         },
         {
           "name": "vitest",
           "ok": true,
-          "summary": "Tests  177 passed (177)",
+          "summary": "Tests  193 passed (193)",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 16.801
+          "seconds": 16.97
         },
         {
           "name": "forge (unit+fuzz+invariant)",
@@ -122,15 +122,106 @@
           "summary": "67 tests passed, 0 failed, 0 skipped (67 total tests)",
           "skipped": 0,
           "failed_tests": [],
-          "seconds": 3.124
+          "seconds": 3.248
         }
       ]
     }
   ],
   "e2e_stability": {
     "requested": 10,
-    "executed": 0,
+    "executed": 10,
     "failures": 0,
-    "runs": []
+    "runs": [
+      {
+        "run": 1,
+        "id": "0da9c835-ccd7-497f-8c51-30ff3847dc41",
+        "at": "2026-10-29T17:46:01.370Z",
+        "ok": true,
+        "summary": "Tests  35 passed (35)",
+        "failed_tests": [],
+        "seconds": 16.823
+      },
+      {
+        "run": 2,
+        "id": "9ffe0510-b3e8-43dd-a22b-f748e99a696f",
+        "at": "2026-10-29T17:46:17.906Z",
+        "ok": true,
+        "summary": "Tests  35 passed (35)",
+        "failed_tests": [],
+        "seconds": 16.536
+      },
+      {
+        "run": 3,
+        "id": "14c03a4c-4890-42ad-a8b7-7424655df8ed",
+        "at": "2026-10-29T17:46:34.309Z",
+        "ok": true,
+        "summary": "Tests  35 passed (35)",
+        "failed_tests": [],
+        "seconds": 16.403
+      },
+      {
+        "run": 4,
+        "id": "11faa326-feb9-48c8-9ecc-21f12025953d",
+        "at": "2026-10-29T17:46:50.863Z",
+        "ok": true,
+        "summary": "Tests  35 passed (35)",
+        "failed_tests": [],
+        "seconds": 16.554
+      },
+      {
+        "run": 5,
+        "id": "2b84f8cb-d7e9-4bc9-a69f-c83ede490b95",
+        "at": "2026-10-29T17:47:07.434Z",
+        "ok": true,
+        "summary": "Tests  35 passed (35)",
+        "failed_tests": [],
+        "seconds": 16.571
+      },
+      {
+        "run": 6,
+        "id": "885ea266-eff5-4582-b8c5-0983bdf36455",
+        "at": "2026-10-29T17:47:24.026Z",
+        "ok": true,
+        "summary": "Tests  35 passed (35)",
+        "failed_tests": [],
+        "seconds": 16.591
+      },
+      {
+        "run": 7,
+        "id": "67c61fac-641f-43fd-924c-0066e9254489",
+        "at": "2026-10-29T17:47:40.632Z",
+        "ok": true,
+        "summary": "Tests  35 passed (35)",
+        "failed_tests": [],
+        "seconds": 16.606
+      },
+      {
+        "run": 8,
+        "id": "75233bfb-5ccd-49fb-a5bd-c29018fb9e7a",
+        "at": "2026-10-29T17:47:57.479Z",
+        "ok": true,
+        "summary": "Tests  35 passed (35)",
+        "failed_tests": [],
+        "seconds": 16.847
+      },
+      {
+        "run": 9,
+        "id": "2da8877a-c467-45b9-8b6c-be1cffe9397f",
+        "at": "2026-10-29T17:48:14.054Z",
+        "ok": true,
+        "summary": "Tests  35 passed (35)",
+        "failed_tests": [],
+        "seconds": 16.575
+      },
+      {
+        "run": 10,
+        "id": "7e5988a7-0234-4487-8b98-a8cd4b9c1f17",
+        "at": "2026-10-29T17:48:30.339Z",
+        "ok": true,
+        "summary": "Tests  35 passed (35)",
+        "failed_tests": [],
+        "seconds": 16.285
+      }
+    ]
   }
 }

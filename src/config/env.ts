@@ -1,5 +1,6 @@
 import { getAddress, isAddress } from 'viem';
 import { CHAINS } from './chains.js';
+import { PAYAI_FACILITATOR_URL } from '../billing/x402.js';
 
 export type ProviderMode = 'live' | 'simulated';
 export type X402Mode = 'off' | 'facilitator';
@@ -58,6 +59,8 @@ export interface AppConfig {
 
   auditLogPath?: string;
   publicBaseUrl: string;
+  /** ERC-8257 manifest creatorAddress (lower-case) for the OpenSea Tools listing. Unset = manifest disabled. */
+  toolCreatorAddress?: string;
   /** SQLite file for durable records + shared payment nonces. Unset = in-memory (single process, dev only). */
   storagePath?: string;
   circuit: { failureThreshold: number; cooldownMs: number };
@@ -106,6 +109,15 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (payTo && !isAddress(payTo)) throw new Error('X402_PAY_TO is not a valid address');
   if (x402Mode === 'facilitator' && !payTo) throw new Error('X402_PAY_TO is required when X402_MODE=facilitator');
 
+  const toolCreator = env.TOOL_CREATOR_ADDRESS;
+  if (toolCreator && !isAddress(toolCreator, { strict: false })) throw new Error('TOOL_CREATOR_ADDRESS is not a valid address');
+  const priceAtomic = env.X402_PRICE_ATOMIC || '10000';
+  if (!/^[1-9][0-9]{0,15}$/.test(priceAtomic)) throw new Error('X402_PRICE_ATOMIC must be a positive integer (USDC 6-decimal units)');
+  const facilitatorUrl = env.X402_FACILITATOR_URL || PAYAI_FACILITATOR_URL;
+  if (!/^https:\/\//.test(facilitatorUrl) && !/^http:\/\/(localhost|127\.0\.0\.1)[:/]/.test(facilitatorUrl)) {
+    throw new Error('X402_FACILITATOR_URL must use https');
+  }
+
   const hardMaxSlippageBps = int(env.HARD_MAX_SLIPPAGE_BPS, 300, 1, 5000);
 
   return {
@@ -149,11 +161,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     maxBodyBytes: int(env.MAX_BODY_BYTES, 16_384, 256, 1_048_576),
     x402: {
       mode: x402Mode,
-      facilitatorUrl: env.X402_FACILITATOR_URL ?? 'https://x402.org/facilitator/',
+      facilitatorUrl: facilitatorUrl.endsWith('/') ? facilitatorUrl : `${facilitatorUrl}/`,
       network: env.X402_NETWORK ?? 'base',
       asset: env.X402_ASSET ?? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
       payTo: payTo ? getAddress(payTo) : undefined,
-      priceAtomic: env.X402_PRICE_ATOMIC ?? '10000',
+      priceAtomic,
       maxTimeoutSeconds: int(env.X402_MAX_TIMEOUT_SECONDS, 60, 5, 3600),
       paidPaths: list(env.X402_PAID_PATHS).length ? list(env.X402_PAID_PATHS) : ['/v1/routes/quote', '/v1/routes/prepare'],
     },
@@ -161,6 +173,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     storagePath: env.STORAGE_PATH || undefined,
     circuit: { failureThreshold: int(env.CIRCUIT_FAILURE_THRESHOLD, 5, 1, 1000), cooldownMs: int(env.CIRCUIT_COOLDOWN_MS, 30_000, 0) },
     approvalGasUnits: BigInt(int(env.APPROVAL_GAS_UNITS, 55_000, 21_000, 1_000_000)),
-    publicBaseUrl: env.PUBLIC_BASE_URL ?? 'http://localhost:8080',
+    publicBaseUrl: (env.PUBLIC_BASE_URL || 'http://localhost:8080').replace(/\/+$/, ''),
+    toolCreatorAddress: toolCreator ? toolCreator.toLowerCase() : undefined,
   };
 }

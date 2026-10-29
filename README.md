@@ -66,6 +66,36 @@ curl -s localhost:8080/v1/routes/quote -H 'content-type: application/json' -d '{
 
 ---
 
+## انتشار در OpenSea Tools (ERC-8257) و Render
+
+فقط API مسیریابی (`POST /v1/routes/quote`) به‌عنوان ابزار منتشر می‌شود؛ پروتکل بریج آزمایشی جزو ابزار نیست و هیچ قراردادی مستقر نمی‌شود.
+
+| مسیر | کار |
+|---|---|
+| `GET /.well-known/ai-tool/bridgepilot-cross-chain-quote.json` | manifest ERC-8257 (با `npx @opensea/tool-sdk validate` معتبر؛ hash با `tool-sdk hash` یکی است) |
+| `POST /v1/routes/quote` بدون پرداخت | 402 با بدنه x402 v1 (`accepts`) + هدر base64 `PAYMENT-REQUIRED` نسخه ۲ با متادیتای Bazaar |
+| `X-PAYMENT` (v1) یا `PAYMENT-SIGNATURE` (v2) | verify → اجرای درخواست → settle از طریق facilitator PayAI؛ USDC مستقیم به `X402_PAY_TO` |
+| `GET /static/icon.png` | آیکن PNG ۵۱۲×۵۱۲ |
+| `GET /register-onchain` | صفحه‌ای که سازنده با کیف‌پول خودش `registerTool` را روی ToolRegistry در Base (`0x265BB2DBFC0A8165C9A1941Eb1372F349baD2cf1`) امضا می‌کند؛ سرور هیچ کلیدی ندارد. ثبت تکراری را بررسی و هشدار می‌دهد. |
+
+قیمت پیش‌فرض `X402_PRICE_ATOMIC=10000` (۰٫۰۱ USDC) است و قابل تغییر است. هر تغییر در `PUBLIC_BASE_URL`، `TOOL_CREATOR_ADDRESS`، `X402_PAY_TO`، قیمت یا شبکه hash manifest را عوض می‌کند و نیاز به `updateToolMetadata` روی زنجیره دارد.
+
+### Render (پلن رایگان، Docker)
+`Dockerfile` فقط API را می‌سازد (Node 22، پورت از `PORT`). متغیرهای محیطی:
+
+| متغیر | مقدار |
+|---|---|
+| `PROVIDER_MODE` | `live` |
+| `X402_MODE` | `facilitator` |
+| `X402_PAY_TO` | آدرس کیف‌پول دریافت‌کننده |
+| `TOOL_CREATOR_ADDRESS` | آدرس سازنده (همان کیف‌پولی که ثبت را امضا می‌کند) |
+| `PUBLIC_BASE_URL` | آدرس https سرویس، بدون `/` انتهایی |
+| اختیاری | `X402_PRICE_ATOMIC`، `LIFI_API_KEY`، `ACROSS_API_KEY`، `STORAGE_PATH` (فقط با دیسک)، `RATE_LIMIT_CAPACITY`، `RATE_LIMIT_REFILL_PER_SEC` |
+
+بدون `STORAGE_PATH` همه‌چیز در حافظه است و nonceهای پرداخت با ری‌استارت پاک می‌شوند؛ این مشکلی ایجاد نمی‌کند چون هر authorization روی زنجیره فقط یک بار قابل settle است.
+
+---
+
 ## پروتکل بریج (testnet)
 
 ```bash
@@ -100,7 +130,7 @@ e2e پروتکل به `anvil` نیاز دارد (`ANVIL_PATH`) و در نبود 
 ## محدودیت‌های شناخته‌شده
 - آداپتورهای LI.FI و Across با داده واقعی شبکه آزموده نشده‌اند (دسترسی شبکه در محیط ساخت مسدود بود)؛ fixtureها بر اساس مستندات رسمی‌اند. پیش از عرضه، با کلید API واقعی یک بار تست شوند.
 - اجرای Across (`depositV3`) پیش‌فرض خاموش است تا روی testnet تأیید شود.
-- قالب manifest باید با مشخصات فعلی OpenSea Agent Tools تطبیق داده شود.
+- manifest قدیمی `/.well-known/ai-tool.json` فقط توصیفی است؛ manifest رسمی ERC-8257 برای OpenSea در بخش «انتشار در OpenSea Tools» آمده است.
 - بدون `STORAGE_PATH` همه‌چیز در حافظه است (فقط توسعه). با آن، رکوردها و nonceهای پرداخت در SQLite برای چند فرایند روی یک میزبان پایدار و اتمیک‌اند؛ برای چند سرور باید PostgreSQL پیاده شود (`docs/operations.md`).
 - پروتکل بریج ممیزی نشده و مبتنی بر اعتماد به امضاکنندگان است — برای دارایی واقعی استفاده نشود.
 - `node:sqlite` در Node 22 هنوز «experimental» است (هشدار آن خاموش شده).

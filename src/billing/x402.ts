@@ -4,6 +4,19 @@ import type { FetchLike } from '../utils/http.js';
 import { fetchJson } from '../utils/http.js';
 import { MemoryNonceStore, type NonceStore } from './nonce-store.js';
 
+/** PayAI hosted facilitator: the default of @opensea/tool-sdk's x402 gate (what OpenSea-listed tools use). */
+export const PAYAI_FACILITATOR_URL = 'https://facilitator.payai.network/';
+export const PAYMENT_REQUIRED_HEADER = 'payment-required';
+export const PAYMENT_SIGNATURE_HEADER = 'payment-signature';
+export const PAYMENT_RESPONSE_HEADER = 'payment-response';
+
+/** network -> [chain id, USDC address, EIP-712 domain name of that USDC contract]. */
+export const USDC_NETWORKS: Record<string, [number, string, string]> = {
+  base: [8453, '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', 'USD Coin'],
+  'base-sepolia': [84532, '0x036CbD53842c5426634e7929541eC2318f3dCF7e', 'USDC'],
+};
+
+/** x402 v1 PaymentRequirements (what @opensea/tool-sdk's hosted gate emits and reads). */
 export interface PaymentRequirements {
   scheme: 'exact';
   network: string;
@@ -17,23 +30,63 @@ export interface PaymentRequirements {
   extra: { name: string; version: string };
 }
 
+/** x402 v2 PaymentRequirements (CAIP-2 network, `amount` instead of `maxAmountRequired`). */
+export interface PaymentRequirementsV2 {
+  scheme: 'exact';
+  network: string;
+  asset: string;
+  amount: string;
+  payTo: string;
+  maxTimeoutSeconds: number;
+  extra: { name: string; version: string };
+}
+
+interface Authorization { from?: string; to?: string; value?: string; validAfter?: string; validBefore?: string; nonce?: string }
+
 interface PaymentPayload {
   x402Version: number;
-  scheme: string;
-  network: string;
-  payload: {
-    signature?: string;
-    authorization?: { from?: string; to?: string; value?: string; validAfter?: string; validBefore?: string; nonce?: string };
-  };
+  scheme?: string;
+  network?: string;
+  /** v2 only: the requirements the client chose to pay. */
+  accepted?: Partial<PaymentRequirementsV2>;
+  payload: { signature?: string; authorization?: Authorization };
 }
 
 export type VerifyResult =
-  | { ok: true; payer: string; payload: PaymentPayload; replayKey: string }
+  | { ok: true; payer: string; payload: PaymentPayload; replayKey: string; version: 1 | 2 }
   | { ok: false; reason: string };
 
+export interface SettleResult { success: boolean; transaction?: string; network?: string; payer?: string; errorReason?: string }
+
+/** Resource info + Bazaar discovery metadata for the x402 v2 PAYMENT-REQUIRED header. */
+export interface V2Resource {
+  url: string;
+  description: string;
+  mimeType: 'application/json';
+  serviceName?: string;
+  iconUrl?: string;
+  tags?: string[];
+}
+
+/** Atomic USDC units (6 decimals) -> decimal string, e.g. "10000" -> "0.01". */
+export function atomicToUsdc(atomic: string): string {
+  const v = BigInt(atomic);
+  const whole = v / 1_000_000n;
+  const frac = (v % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '');
+  return frac ? `${whole}.${frac}` : whole.toString();
+}
+
+export function encodeHeader(obj: unknown): string {
+  return Buffer.from(JSON.stringify(obj)).toString('base64');
+}
+
 /**
- * x402 "exact" scheme (v1) using a facilitator for signature verification and settlement.
+ * x402 "exact" scheme using a hosted facilitator (PayAI by default) for signature verification and
+ * settlement. v1 (`X-PAYMENT`) is what OpenSea's tool-sdk speaks; v2 (`PAYMENT-SIGNATURE`) is accepted
+ * too, and every 402 also carries a base64 v2 `PAYMENT-REQUIRED` header (agentic.market / Bazaar).
  * Settlement only happens after the paid request succeeded, so failed calls are not charged.
+ * BridgePilot never holds a key: the facilitator broadcasts the payer's signed EIP-3009 authorization
+ * and the USDC goes straight to X402_PAY_TO.
  */
 export class X402 {
   constructor(
@@ -51,6 +104,18 @@ export class X402 {
     return this.enabled && this.cfg.paidPaths.includes(path);
   }
 
+  private get usdc(): [number, string, string] {
+    return USDC_NETWORKS[this.cfg.network] ?? [8453, this.cfg.asset, 'USD Coin'];
+  }
+
+  get caip2(): string {
+    return `eip155:${this.usdc[0]}`;
+  }
+
+  get priceUsdc(): string {
+    return atomicToUsdc(this.cfg.priceAtomic);
+  }
+
   requirements(resource: string, description: string): PaymentRequirements {
     return {
       scheme: 'exact',
@@ -62,12 +127,29 @@ export class X402 {
       payTo: this.cfg.payTo!,
       maxTimeoutSeconds: this.cfg.maxTimeoutSeconds,
       asset: this.cfg.asset,
-      extra: { name: 'USD Coin', version: '2' },
+      extra: { name: this.usdc[2], version: '2' },
+    };
+  }
+
+  requirementsV2(): PaymentRequirementsV2 {
+    return {
+      scheme: 'exact',
+      network: this.caip2,
+      asset: this.cfg.asset,
+      amount: this.cfg.priceAtomic,
+      payTo: this.cfg.payTo!,
+      maxTimeoutSeconds: this.cfg.maxTimeoutSeconds,
+      extra: { name: this.usdc[2], version: '2' },
     };
   }
 
   challenge(resource: string, description: string, error = 'X-PAYMENT header is required') {
     return { x402Version: 1, error, accepts: [this.requirements(resource, description)] };
+  }
+
+  /** x402 v2 PaymentRequired object (sent base64-encoded in the PAYMENT-REQUIRED header). */
+  challengeV2(resource: V2Resource, error: string, extensions?: Record<string, unknown>) {
+    return { x402Version: 2, error, resource, accepts: [this.requirementsV2()], ...(extensions ? { extensions } : {}) };
   }
 
   decode(header: string): PaymentPayload | null {
@@ -80,10 +162,24 @@ export class X402 {
     }
   }
 
-  async verify(header: string, reqs: PaymentRequirements): Promise<VerifyResult> {
+  /**
+   * @param header  X-PAYMENT (v1) or PAYMENT-SIGNATURE (v2) value
+   * @param viaV2Header true when the value came from PAYMENT-SIGNATURE
+   */
+  async verify(header: string, reqs: PaymentRequirements, viaV2Header = false): Promise<VerifyResult> {
     const p = this.decode(header);
     if (!p) return { ok: false, reason: 'malformed X-PAYMENT header' };
-    if (p.x402Version !== 1 || p.scheme !== 'exact' || p.network !== reqs.network) return { ok: false, reason: 'unsupported scheme or network' };
+    const version: 1 | 2 = viaV2Header || p.x402Version === 2 ? 2 : 1;
+    const v2 = this.requirementsV2();
+    if (version === 2) {
+      const acc = p.accepted;
+      if (p.x402Version !== 2 || !acc || typeof acc !== 'object') return { ok: false, reason: 'unsupported scheme or network' };
+      for (const k of ['scheme', 'network', 'asset', 'amount', 'payTo'] as const) {
+        if (String(acc[k] ?? '').toLowerCase() !== String(v2[k]).toLowerCase()) return { ok: false, reason: 'payment requirements mismatch' };
+      }
+    } else if (p.x402Version !== 1 || p.scheme !== 'exact' || p.network !== reqs.network) {
+      return { ok: false, reason: 'unsupported scheme or network' };
+    }
     const a = p.payload.authorization;
     if (!a || typeof a.to !== 'string' || typeof a.value !== 'string' || typeof a.nonce !== 'string' || typeof a.from !== 'string') {
       return { ok: false, reason: 'missing authorization' };
@@ -94,6 +190,7 @@ export class X402 {
     if (!/^[0-9]+$/.test(a.validBefore ?? '') || Number(a.validBefore) <= nowSec) return { ok: false, reason: 'authorization expired' };
     if (/^[0-9]+$/.test(a.validAfter ?? '') && Number(a.validAfter) > nowSec) return { ok: false, reason: 'authorization not yet valid' };
 
+    // Same (payer, nonce) identity for v1 and v2: one onchain authorization can be used once.
     const replayKey = createHash('sha256').update(`${a.from.toLowerCase()}:${a.nonce.toLowerCase()}`).digest('hex');
     // Atomic reservation BEFORE any await, shared across processes when a durable store is used.
     // Kept until the authorization can no longer be settled (validBefore) plus a safety hour.
@@ -102,43 +199,44 @@ export class X402 {
 
     let res: { isValid?: boolean; invalidReason?: string; payer?: string };
     try {
-      res = (await fetchJson(new URL('verify', this.cfg.facilitatorUrl).toString(), {
-        provider: 'x402',
-        fetch: this.fetch,
-        timeoutMs: 8000,
-        method: 'POST',
-        body: { x402Version: 1, paymentPayload: p, paymentRequirements: reqs },
-        maxBytes: 32_000,
-      })) as typeof res;
-    } catch {
+      res = (await this.post('verify', 8000, p, version === 2 ? v2 : reqs, version)) as typeof res;
+    } catch (e) {
+      // Facilitators answer an invalid payment with 4xx + {isValid:false, invalidReason}.
+      const body = (e as { body?: { isValid?: boolean; invalidReason?: string } }).body;
       this.nonces.release(replayKey);
+      if (body && body.isValid === false) return { ok: false, reason: String(body.invalidReason ?? 'payment invalid').slice(0, 120) };
       return { ok: false, reason: 'payment facilitator unavailable' };
     }
     if (res?.isValid !== true) {
       this.nonces.release(replayKey);
-      return { ok: false, reason: res?.invalidReason ?? 'payment invalid' };
+      return { ok: false, reason: String(res?.invalidReason ?? 'payment invalid').slice(0, 120) };
     }
-    return { ok: true, payer: res.payer ?? a.from, payload: p, replayKey };
+    return { ok: true, payer: res.payer ?? a.from, payload: p, replayKey, version };
   }
 
-  async settle(payload: PaymentPayload, reqs: PaymentRequirements): Promise<{ success: boolean; transaction?: string; network?: string; payer?: string; errorReason?: string }> {
+  async settle(payload: PaymentPayload, reqs: PaymentRequirements, version: 1 | 2 = 1): Promise<SettleResult> {
     try {
-      return (await fetchJson(new URL('settle', this.cfg.facilitatorUrl).toString(), {
-        provider: 'x402',
-        fetch: this.fetch,
-        timeoutMs: 15_000,
-        method: 'POST',
-        body: { x402Version: 1, paymentPayload: payload, paymentRequirements: reqs },
-        maxBytes: 32_000,
-      })) as { success: boolean; transaction?: string; network?: string; payer?: string; errorReason?: string };
+      const r = (await this.post('settle', 15_000, payload, version === 2 ? this.requirementsV2() : reqs, version)) as SettleResult;
+      if (!r || r.success !== true || !r.transaction) return { success: false, errorReason: r?.errorReason ?? 'settlement not confirmed' };
+      return r;
     } catch {
       return { success: false, errorReason: 'facilitator unavailable' };
     }
+  }
+
+  private post(path: 'verify' | 'settle', timeoutMs: number, paymentPayload: PaymentPayload, paymentRequirements: unknown, version: 1 | 2) {
+    return fetchJson(new URL(path, this.cfg.facilitatorUrl).toString(), {
+      provider: 'x402',
+      fetch: this.fetch,
+      timeoutMs,
+      method: 'POST',
+      body: { x402Version: version, paymentPayload, paymentRequirements },
+      maxBytes: 32_000,
+    });
   }
 
   /** Release a reserved nonce when the paid request failed before settlement. */
   release(replayKey: string): void {
     this.nonces.release(replayKey);
   }
-
 }

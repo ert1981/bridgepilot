@@ -4,7 +4,7 @@ import { ASSETS } from '../../src/config/assets.js';
 import { CHAINS } from '../../src/config/chains.js';
 import { runQuote } from '../../src/agents/orchestrator.js';
 import { qualityReport } from '../../src/agents/quality-agent.js';
-import { X402, type PaymentRequirements } from '../../src/billing/x402.js';
+import { encodeHeader, PAYMENT_RESPONSE_HEADER, PAYMENT_SIGNATURE_HEADER, PAYMENT_REQUIRED_HEADER, X402, type PaymentRequirements } from '../../src/billing/x402.js';
 import { RateLimiter } from '../../src/billing/usage-limits.js';
 import { getTransferStatus } from '../../src/execution/monitor-transaction.js';
 import { prepareTransfer } from '../../src/execution/prepare-transaction.js';
@@ -14,8 +14,11 @@ import { ApiError } from '../../src/utils/errors.js';
 import { header, readJson, send, sendError } from './http-utils.js';
 import { identify, type Identity } from './middleware/authentication.js';
 import { manifest, openapi, VERSION } from './manifest.js';
+import { iconPng } from './icon.js';
+import { BAZAAR_DESCRIPTION, bazaarExtension, buildToolManifest, ICON_PATH, MANIFEST_RE, manifestStatus, SERVICE_NAME, TOOL_PATH, TOOL_TAGS } from './opensea-tool.js';
+import { REGISTER_PAGE_CSP, registerPage } from './register-page.js';
 
-type Handler = (ctx: Ctx) => Promise<{ status: number; body: unknown; contentType?: string }>;
+type Handler = (ctx: Ctx) => Promise<{ status: number; body: unknown; contentType?: string; headers?: Record<string, string> }>;
 interface Ctx {
   req: IncomingMessage;
   url: URL;
@@ -30,6 +33,32 @@ export function createApp(svc: Services) {
   const limiter = new RateLimiter(cfg.rateLimit.capacity, cfg.rateLimit.refillPerSec, svc.now);
   const x402 = new X402(cfg.x402, svc.fetch, svc.now, svc.nonces);
   const keysRequired = cfg.apiKeys.length > 0 && !x402.enabled;
+
+  /** 402: x402 v1 JSON body (what OpenSea's tool-sdk reads) + base64 x402 v2 PAYMENT-REQUIRED header (Bazaar). */
+  const paymentRequired = (res: ServerResponse, reqs: PaymentRequirements, path: string, base: Record<string, string>, error?: string) => {
+    const body = x402.challenge(reqs.resource, reqs.description, error);
+    const isTool = path === TOOL_PATH;
+    const v2 = x402.challengeV2(
+      {
+        url: reqs.resource,
+        description: isTool ? BAZAAR_DESCRIPTION : reqs.description,
+        mimeType: 'application/json',
+        serviceName: SERVICE_NAME,
+        iconUrl: `${cfg.publicBaseUrl}${ICON_PATH}`,
+        ...(isTool ? { tags: TOOL_TAGS } : {}),
+      },
+      body.error,
+      isTool ? bazaarExtension(x402.priceUsdc) : undefined,
+    );
+    return send(res, 402, body, {
+      ...base,
+      'x-accept-payment': 'x402',
+      [PAYMENT_REQUIRED_HEADER]: encodeHeader(v2),
+      'access-control-expose-headers': 'PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-RESPONSE',
+    });
+  };
+
+  const notConfigured = (reason: string) => new ApiError(503, 'TOOL_NOT_CONFIGURED', `OpenSea tool listing is not configured: ${reason}`);
 
   const parse = <T>(schema: { safeParse(v: unknown): { success: true; data: T } | { success: false; error: import('zod').ZodError } }, v: unknown): T => {
     const r = schema.safeParse(v);
@@ -96,6 +125,31 @@ export function createApp(svc: Services) {
       method: 'GET', pattern: /^\/\.well-known\/ai-tool(\.json|\/)?$/, keys: [],
       handler: async () => ({ status: 200, body: manifest(cfg) }),
     },
+    {
+      // ERC-8257 manifest for OpenSea Tools (only the quote endpoint is listed).
+      method: 'GET', pattern: MANIFEST_RE, keys: [],
+      handler: async () => {
+        const st = manifestStatus(cfg);
+        if (!st.ok) throw notConfigured(st.reason);
+        return { status: 200, body: buildToolManifest(cfg), headers: { 'cache-control': 'public, max-age=300', 'access-control-allow-origin': '*' } };
+      },
+    },
+    {
+      method: 'GET', pattern: /^\/static\/icon\.png$/, keys: [],
+      handler: async () => ({ status: 200, body: iconPng(), contentType: 'image/png', headers: { 'cache-control': 'public, max-age=86400' } }),
+    },
+    {
+      // Creator signs registerTool with their own wallet; the server never holds a key.
+      method: 'GET', pattern: /^\/register-onchain$/, keys: [],
+      handler: async () => {
+        const st = manifestStatus(cfg);
+        if (!st.ok) throw notConfigured(st.reason);
+        return {
+          status: 200, body: registerPage(cfg), contentType: 'text/html; charset=utf-8',
+          headers: { 'content-security-policy': REGISTER_PAGE_CSP, 'x-robots-tag': 'noindex', 'x-frame-options': 'DENY' },
+        };
+      },
+    },
     { method: 'GET', pattern: /^\/openapi\.json$/, keys: [], handler: async () => ({ status: 200, body: openapi(cfg) }) },
     {
       method: 'GET', pattern: /^\/metrics$/, keys: [],
@@ -152,17 +206,20 @@ export function createApp(svc: Services) {
       if (route.paid) {
         if (keysRequired && !identity.apiKey) throw new ApiError(401, 'UNAUTHORIZED', 'API key required (x-api-key header).');
         if (x402.isPaidPath(path) && !identity.apiKey) {
-          paidReqs = x402.requirements(`${cfg.publicBaseUrl}${path}`, 'BridgePilot cross-chain route optimization');
-          const pay = header(req, 'x-payment');
-          if (!pay) return send(res, 402, x402.challenge(paidReqs.resource, paidReqs.description), baseHeaders);
-          verified = await x402.verify(pay, paidReqs);
-          if (!verified.ok) return send(res, 402, x402.challenge(paidReqs.resource, paidReqs.description, verified.reason), baseHeaders);
+          paidReqs = x402.requirements(`${cfg.publicBaseUrl}${path}`, `BridgePilot cross-chain route ${path === TOOL_PATH ? 'quote' : 'preparation'} (${x402.priceUsdc} USDC)`);
+          // v2 clients pay with PAYMENT-SIGNATURE, v1 clients (OpenSea tool-sdk) with X-PAYMENT.
+          const payV2 = header(req, PAYMENT_SIGNATURE_HEADER);
+          const pay = payV2 ?? header(req, 'x-payment');
+          if (!pay) return paymentRequired(res, paidReqs, path, baseHeaders);
+          verified = await x402.verify(pay, paidReqs, !!payV2);
+          if (!verified.ok) return paymentRequired(res, paidReqs, path, baseHeaders, verified.reason);
         }
       }
 
       const out = await route.handler(ctx);
       const headers: Record<string, string> = { ...baseHeaders };
       if (out.contentType) headers['content-type'] = out.contentType;
+      if (out.headers) Object.assign(headers, out.headers);
 
       const unbillable = (out.body as { status?: string } | null)?.status === 'providers_unavailable';
       if (paidReqs && verified?.ok && unbillable) {
@@ -170,13 +227,16 @@ export function createApp(svc: Services) {
         x402.release(verified.replayKey);
         headers['x-payment-status'] = 'not-charged';
       } else if (paidReqs && verified?.ok) {
-        const settle = await x402.settle(verified.payload, paidReqs);
+        const settle = await x402.settle(verified.payload, paidReqs, verified.version);
         if (!settle.success) {
           // Work was done but payment did not settle: do not release the result.
           svc.metrics.inc('bridgepilot_payment_settle_failed_total');
-          return send(res, 402, x402.challenge(paidReqs.resource, paidReqs.description, `settlement failed: ${settle.errorReason ?? 'unknown'}`), baseHeaders);
+          return paymentRequired(res, paidReqs, path, baseHeaders, `settlement failed: ${settle.errorReason ?? 'unknown'}`);
         }
-        headers['x-payment-response'] = Buffer.from(JSON.stringify(settle)).toString('base64');
+        const receipt = { success: true, transaction: settle.transaction, network: settle.network ?? (verified.version === 2 ? x402.caip2 : cfg.x402.network), payer: settle.payer ?? verified.payer };
+        headers['x-payment-response'] = encodeHeader(receipt);
+        if (verified.version === 2) headers[PAYMENT_RESPONSE_HEADER] = encodeHeader(receipt);
+        headers['access-control-expose-headers'] = 'PAYMENT-RESPONSE, X-PAYMENT-RESPONSE';
         svc.metrics.inc('bridgepilot_payments_settled_total');
       }
       svc.metrics.inc('bridgepilot_http_requests_total', { path: route.pattern.source.slice(0, 40), status: String(out.status) });

@@ -5,9 +5,9 @@ export const jsonReplacer = (_k: string, v: unknown) => (typeof v === 'bigint' ?
 
 export function send(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
   if (res.headersSent) return;
-  const text = typeof body === 'string' ? body : JSON.stringify(body, jsonReplacer);
+  const text = Buffer.isBuffer(body) || typeof body === 'string' ? body : JSON.stringify(body, jsonReplacer);
   res.writeHead(status, {
-    'content-type': typeof body === 'string' ? 'text/plain; charset=utf-8' : 'application/json; charset=utf-8',
+    'content-type': Buffer.isBuffer(body) ? 'application/octet-stream' : typeof body === 'string' ? 'text/plain; charset=utf-8' : 'application/json; charset=utf-8',
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',

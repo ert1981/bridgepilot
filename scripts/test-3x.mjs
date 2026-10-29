@@ -19,15 +19,24 @@
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, writeFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, delimiter } from 'node:path';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const reportPath = join(root, 'test-report.json');
 const runId = randomUUID();
 const startedAt = new Date().toISOString();
-const forge = process.env.FORGE_PATH ?? (existsSync('/opt/foundry/forge') ? '/opt/foundry/forge' : 'forge');
-const anvil = process.env.ANVIL_PATH ?? (existsSync('/opt/foundry/anvil') ? '/opt/foundry/anvil' : 'anvil');
+// Resolve Foundry binaries to ABSOLUTE paths: the protocol e2e test checks existsSync(ANVIL_PATH), so a bare
+// "anvil" (found via PATH) would make it fail. Order: env override, /opt/foundry, ~/.foundry/bin (foundryup), PATH.
+function resolveBin(name, override) {
+  if (override) return override;
+  const candidates = [join('/opt/foundry', name), join(homedir(), '.foundry', 'bin', name)];
+  for (const dir of (process.env.PATH ?? '').split(delimiter)) if (dir) candidates.push(join(dir, name));
+  return candidates.find((p) => existsSync(p)) ?? name;
+}
+const forge = resolveBin('forge', process.env.FORGE_PATH);
+const anvil = resolveBin('anvil', process.env.ANVIL_PATH);
 const appOnly = process.argv.includes('--app-only');
 const repIdx = process.argv.indexOf('--e2e-repeats');
 const e2eRepeats = appOnly ? 0 : repIdx >= 0 ? Math.max(0, Number(process.argv[repIdx + 1] ?? 10)) : 10;
