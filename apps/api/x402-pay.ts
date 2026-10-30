@@ -22,6 +22,8 @@ export interface PayRoute {
   useAccount?: string[];
   /** Take provider/accepted_output from a quote paid earlier on this page. */
   fromQuote?: boolean;
+  /** Providers whose routes this server can prepare (quote-only providers are skipped). */
+  executableProviders?: string[];
 }
 
 export const X402_PAY_SCRIPT = String.raw`"use strict";
@@ -39,7 +41,10 @@ function usdc(atomic){ const v = BigInt(atomic); const f = (v % 1000000n).toStri
 function txLink(h){ return '<a target="_blank" rel="noopener" href="https://basescan.org/tx/' + esc(h) + '">' + esc(h) + "</a>"; }
 function errText(body, res){
   if (body && typeof body.error === "string") return body.error;
-  if (body && body.error && typeof body.error.message === "string") return body.error.message;
+  if (body && body.error && typeof body.error.message === "string") {
+    const d = Array.isArray(body.error.details) ? body.error.details.filter(x => x && x.code).map(x => x.code + (x.message ? ": " + x.message : "")) : [];
+    return body.error.message + (d.length ? " — " + d.join("; ") : "");
+  }
   if (body && typeof body.detail === "string") return body.detail;
   if (body && typeof body.message === "string") return body.message;
   const h = res && res.headers.get("PAYMENT-REQUIRED");
@@ -162,13 +167,31 @@ async function ensureBase(){
   const now = String(await call("eth_chainId", null, 10000)).toLowerCase();
   if (now !== CHAIN_HEX) throw new Error("wallet is not on Base mainnet (8453)");
 }
+const QUOTE_KEY = "x402pay-last-quote";
+function savedQuote(){
+  if (lastQuote) return lastQuote;
+  try {
+    const q = JSON.parse(localStorage.getItem(QUOTE_KEY) || "null");
+    if (q && q.at && Date.now() - q.at < 15 * 60 * 1000) return q.body;   // a quote paid on this page in the last 15 min
+  } catch (e) {}
+  return null;
+}
+/** Route from a paid quote that this server can prepare: one marked executable, else one from a provider the
+ *  page config lists as executable here (quotes without a sender are always quote-only). */
+function preparableRoute(q, r){
+  if (!q) return null;
+  const res = q.result || q;
+  const routes = [res.best_route].concat(res.alternatives || []).filter(x => x && x.provider && x.expected_output);
+  const okProv = r.executableProviders || [];
+  return routes.find(x => x.execution_available === true && (!okProv.length || okProv.includes(x.provider))) ||
+    routes.find(x => okProv.includes(x.provider)) || null;
+}
 function bodyFor(r){
   const b = JSON.parse(JSON.stringify(r.example));
   if (r.useAccount && account) { for (const k of r.useAccount) b[k] = account; }
-  const best = lastQuote && (lastQuote.best_route || (lastQuote.result && lastQuote.result.best_route));
-  if (r.fromQuote && best) {
-    b.provider = best.provider || b.provider;
-    if (best.expected_output) b.accepted_output = String(best.expected_output);
+  if (r.fromQuote) {
+    const pick = preparableRoute(savedQuote(), r);
+    if (pick) { b.provider = pick.provider; b.accepted_output = String(pick.expected_output); }
   }
   return b;
 }
@@ -236,7 +259,10 @@ async function pay(r){
     const rh = res.headers.get("PAYMENT-RESPONSE") || res.headers.get("X-PAYMENT-RESPONSE");
     if (rh) { try { receipt = b64json(rh); } catch (e) {} }
     let body = null; try { body = await res.json(); } catch (e) {}
-    if (r.id === "quote" && res.ok && body) lastQuote = body;
+    if (r.id === "quote" && res.ok && body) {
+      lastQuote = body;
+      try { localStorage.setItem(QUOTE_KEY, JSON.stringify({ at: Date.now(), body: { best_route: body.best_route || null, alternatives: body.alternatives || [] } })); } catch (e) {}
+    }
     if (!receipt && body && body.payment && body.payment.transaction) receipt = { transaction: body.payment.transaction };
     let html = "HTTP " + res.status + " ";
     if (receipt && receipt.transaction) {

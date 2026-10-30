@@ -69,7 +69,8 @@ describe('/x402-pay', () => {
     const cfg = cfgOf(r.text);
     expect(cfg.usdc).toBe('0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913');
     expect(cfg.payee).toBe(REZA);
-    expect(cfg.routes.map((x: Body) => [x.path, x.example])).toEqual([[TOOL_PATH, QUOTE_EXAMPLE], [PREPARE_PATH, PREPARE_EXAMPLE]]);
+    expect(cfg.routes.map((x: Body) => [x.path, x.example])).toEqual([[TOOL_PATH, QUOTE_EXAMPLE], [PREPARE_PATH, { ...PREPARE_EXAMPLE, provider: 'lifi', accepted_output: '99700000' }]]);
+    expect(cfg.routes[1].executableProviders).toEqual(['lifi']);  // Across is quote-only unless ACROSS_EXECUTION_ENABLED
     expect(r.text).toContain('real payment');
     expect(r.text).toContain('eip6963:requestProvider');
     expect(r.text).not.toMatch(/__[A-Z]+__/);
@@ -215,5 +216,47 @@ describe('/x402-pay wallet choice (MetaMask by default, picker, Phantom never ch
     expect(out.signedBy).toEqual(['MetaMask']);
     out = runPage({ ...fixture(), wallets: [{ ...PHANTOM, announce: false }], windowEthereum: 0, clicks: ['a'], wait: 1200 });
     expect(out.signedBy).toEqual(['Phantom']);
+  });
+});
+
+describe('/x402-pay prepare body (live 422 NOT_EXECUTABLE on 2026-10-30: the page reused a quote-only Across route)', () => {
+  const pagePrepare = async (input: Body) => {
+    const call = await boot();
+    const html = (await call('GET', '/x402-pay')).text;
+    const challenges: Record<string, string> = {};
+    for (const [p, e] of [[TOOL_PATH, QUOTE_EXAMPLE], [PREPARE_PATH, PREPARE_EXAMPLE]] as const) challenges[p] = (await call('POST', p, e)).headers.get('payment-required')!;
+    const out = runPage({ html, challenges, ...input });
+    return out.requests.filter((q: Body) => q.paid && q.path === PREPARE_PATH).map((q: Body) => q.body);
+  };
+  // shape of the live quote: Across best but quote-only, LI.FI alternative (no sender => also not executable yet)
+  const liveQuote = { best_route: { provider: 'across', expected_output: '99982107', execution_available: false },
+    alternatives: [{ provider: 'lifi', expected_output: '99750000', execution_available: false }] };
+
+  it('skips the quote-only Across best route and prepares LI.FI at the output LI.FI quoted', async () => {
+    const [body] = await pagePrepare({ clicks: ['quote', 'prepare'], paidBody: liveQuote });
+    expect(body).toMatchObject({ provider: 'lifi', accepted_output: '99750000', sender: '0x00000000000000000000000000000000000000aa', recipient: '0x00000000000000000000000000000000000000aa' });
+  });
+
+  it('after a reload it reuses the quote paid on this page in the last 15 minutes', async () => {
+    const store = { 'x402pay-last-quote': JSON.stringify({ at: Date.now(), body: liveQuote }) };
+    const [body] = await pagePrepare({ clicks: ['prepare'], store });
+    expect(body).toMatchObject({ provider: 'lifi', accepted_output: '99750000' });
+    const old = { 'x402pay-last-quote': JSON.stringify({ at: Date.now() - 16 * 60_000, body: liveQuote }) };
+    const [fallback] = await pagePrepare({ clicks: ['prepare'], store: old });
+    expect(fallback).toMatchObject({ provider: 'lifi', accepted_output: '99700000' });
+  });
+
+  it('an executable route from the quote is used as is', async () => {
+    const q = { best_route: { provider: 'lifi', expected_output: '99800000', execution_available: true }, alternatives: [] };
+    const [body] = await pagePrepare({ clicks: ['quote', 'prepare'], paidBody: q });
+    expect(body).toMatchObject({ provider: 'lifi', accepted_output: '99800000' });
+  });
+
+  it('shows the API finding codes of a rejected prepare', () => {
+    const html = x402PayPage('S', REZA, [{ id: 'a', name: 'A', path: '/a', example: {} }], 5_000_000n);
+    const a = { scheme: 'exact', network: 'eip155:8453', asset: USDC_BASE, amount: '10000', payTo: REZA, maxTimeoutSeconds: 300, extra: { name: 'USD Coin', version: '2' } };
+    const out = runPage({ html, challenges: { '/a': b64({ x402Version: 2, resource: { url: 'x' }, accepts: [a] }) }, clicks: ['a'], paidStatus: 422,
+      paidBody: { status: 'error', error: { code: 'ROUTE_REJECTED', message: 'Fresh quote failed mandatory checks.', details: [{ code: 'NOT_EXECUTABLE', severity: 'reject', message: 'Route is quote-only.' }] } } });
+    expect(out['res-a']).toContain('Fresh quote failed mandatory checks. — NOT_EXECUTABLE: Route is quote-only.');
   });
 });

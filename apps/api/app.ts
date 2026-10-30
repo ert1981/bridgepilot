@@ -187,7 +187,10 @@ export function createApp(svc: Services) {
         body: x402PayPage('BridgePilot', cfg.x402.payTo ?? '', [
           { id: 'quote', name: 'Route quote (quote)', path: TOOL_PATH, example: QUOTE_EXAMPLE },
           { id: 'prepare', name: 'Route preparation (prepare; pay the quote first, it uses that quote and your address)', path: PREPARE_PATH,
-            example: PREPARE_EXAMPLE, useAccount: ['sender', 'recipient'], fromQuote: true },
+            // Across routes are quote-only unless ACROSS_EXECUTION_ENABLED, so the page prepares with a provider that
+            // can execute here, at the output that provider quoted (a 30 bps drop is allowed by the API's own guard).
+            example: { ...PREPARE_EXAMPLE, provider: 'lifi', accepted_output: '99700000' }, useAccount: ['sender', 'recipient'], fromQuote: true,
+            executableProviders: cfg.across.executionEnabled ? ['lifi', 'across'] : ['lifi'] },
         ], 5_000_000n),
         headers: { 'content-security-policy': X402_PAY_CSP, 'cache-control': 'no-store', 'x-robots-tag': 'noindex', 'x-frame-options': 'DENY' },
       }),
