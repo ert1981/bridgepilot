@@ -190,3 +190,30 @@ describe('facilitator failure reasons reach the payer (2026-10-30 live failures)
     expect(err).toBe('settlement failed: facilitator unavailable (HTTP 400: invalid_transaction_state: x 0x…)');
   });
 });
+
+describe('/x402-pay wallet choice (MetaMask by default, picker, Phantom never chosen silently)', () => {
+  const PHANTOM = { name: 'Phantom', rdns: 'app.phantom', isMetaMask: true, isPhantom: true, uuid: 'p' };
+  const METAMASK = { name: 'MetaMask', rdns: 'io.metamask', isMetaMask: true, uuid: 'm' };
+  const fixture = () => {
+    const a = { scheme: 'exact', network: 'eip155:8453', asset: USDC_BASE, amount: '10000', payTo: REZA, maxTimeoutSeconds: 300, extra: { name: 'USD Coin', version: '2' } };
+    return { html: x402PayPage('S', REZA, [{ id: 'a', name: 'A', path: '/a', example: {} }], 5_000_000n), challenges: { '/a': b64({ x402Version: 2, resource: { url: 'x' }, accepts: [a] }) } };
+  };
+
+  it('announced MetaMask wins over a Phantom window.ethereum, and every request goes to it', () => {
+    const out = runPage({ ...fixture(), wallets: [PHANTOM, METAMASK], windowEthereum: 0, clicks: ['a'], chainId: '0x1' });
+    expect(out.signedBy).toEqual(['MetaMask']);
+    expect(new Set(out.walletCalls.map((c: string[]) => c[0]))).toEqual(new Set(['MetaMask']));
+    expect(out.picker.html).toContain('<option value="m" selected>MetaMask (io.metamask)</option>');
+    expect(out.picker.html).toContain('Phantom (app.phantom)');
+  });
+
+  it('the picker switches wallet and remembers it; legacy fallbacks prefer isMetaMask && !isPhantom', () => {
+    let out = runPage({ ...fixture(), wallets: [PHANTOM, METAMASK], windowEthereum: 0, select: 'p', clicks: ['a'] });
+    expect(out.signedBy).toEqual(['Phantom']);
+    expect(out.store['x402pay-wallet']).toBe('app.phantom');
+    out = runPage({ ...fixture(), wallets: [{ ...PHANTOM, announce: false }, { ...METAMASK, announce: false }], windowEthereum: [0, 1], clicks: ['a'] });
+    expect(out.signedBy).toEqual(['MetaMask']);
+    out = runPage({ ...fixture(), wallets: [{ ...PHANTOM, announce: false }], windowEthereum: 0, clicks: ['a'], wait: 1200 });
+    expect(out.signedBy).toEqual(['Phantom']);
+  });
+});
