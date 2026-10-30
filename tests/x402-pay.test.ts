@@ -158,3 +158,35 @@ describe('/x402-pay', () => {
     expect(out.paid).toHaveLength(1);
   });
 });
+
+describe('facilitator failure reasons reach the payer (2026-10-30 live failures)', () => {
+  const v2For = (ch: Body, nonce: string) => b64({
+    x402Version: 2, accepted: ch.accepts[0], resource: ch.resource,
+    payload: { signature: '0x' + 'cd'.repeat(65), authorization: { from: SENDER, to: REZA, value: ch.accepts[0].amount,
+      validAfter: '0', validBefore: String(Math.floor(NOW / 1000) + 300), nonce } },
+  });
+  const fac = (verify: { status: number; body: unknown }, settle?: { status: number; body: unknown }): Route => (url) => {
+    if (url.host !== 'facilitator.test') return undefined;
+    if (url.pathname === '/verify') return verify;
+    if (url.pathname === '/settle') return settle ?? { status: 200, body: { success: true, transaction: '0xsettled' } };
+    return undefined;
+  };
+
+  it('a 400 {isValid:false} verify is a 402 carrying the facilitator reason', async () => {
+    const call = await boot([fac({ status: 400, body: { isValid: false, invalidReason: 'invalid_exact_evm_payload_signature', invalidMessage: 'bad sig' } })]);
+    const ch = unb64((await call('POST', TOOL_PATH, QUOTE_EXAMPLE)).headers.get('payment-required')!);
+    const r = await call('POST', TOOL_PATH, QUOTE_EXAMPLE, { 'payment-signature': v2For(ch, '0x' + '71'.repeat(32)) });
+    expect(r.status).toBe(402);
+    expect(unb64(r.headers.get('payment-required')!).error).toBe('invalid_exact_evm_payload_signature: bad sig');
+  });
+
+  it('a settle rejection carries the status and reason, without signatures', async () => {
+    const call = await boot([fac({ status: 200, body: { isValid: true, payer: SENDER } },
+      { status: 400, body: { success: false, errorReason: 'invalid_transaction_state', errorMessage: 'x 0x' + 'ab'.repeat(65) } })]);
+    const ch = unb64((await call('POST', TOOL_PATH, QUOTE_EXAMPLE)).headers.get('payment-required')!);
+    const r = await call('POST', TOOL_PATH, QUOTE_EXAMPLE, { 'payment-signature': v2For(ch, '0x' + '72'.repeat(32)) });
+    expect(r.status).toBe(402);
+    const err = unb64(r.headers.get('payment-required')!).error as string;
+    expect(err).toBe('settlement failed: facilitator unavailable (HTTP 400: invalid_transaction_state: x 0x…)');
+  });
+});

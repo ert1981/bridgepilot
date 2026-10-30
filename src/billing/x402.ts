@@ -96,6 +96,20 @@ export function encodeHeader(obj: unknown): string {
  * BridgePilot never holds a key: the facilitator broadcasts the payer's signed EIP-3009 authorization
  * and the USDC goes straight to X402_PAY_TO.
  */
+/** Facilitator failure as "HTTP <status>: <reason>" for logs and the payer; long hex (signatures) elided. */
+export function facilitatorFailure(e: unknown): string {
+  const err = e as { httpStatus?: number; message?: string; body?: unknown };
+  const b = (err?.body && typeof err.body === 'object' ? err.body : {}) as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+  const code = str(b.invalidReason) ?? str(b.errorReason) ?? str(b.errorType) ?? str(b.error);
+  const msg = str(b.invalidMessage) ?? str(b.errorMessage) ?? str(b.message);
+  const reason = code || msg ? [code, msg].filter(Boolean).join(': ') : (str(err?.message) ?? 'unknown error');
+  const text = (err?.httpStatus ? `HTTP ${err.httpStatus}: ` : '') + reason;
+  return text.replace(/0x[0-9a-fA-F]{80,}/g, '0x…').replace(/\s+/g, ' ').slice(0, 200);
+}
+
+const warn = (event: string, detail: string) => console.warn(JSON.stringify({ level: 'warn', event, detail }));
+
 export class X402 {
   constructor(
     private readonly cfg: AppConfig['x402'],
@@ -237,12 +251,19 @@ export class X402 {
       // Facilitators answer an invalid payment with 4xx + {isValid:false, invalidReason}.
       const body = (e as { body?: { isValid?: boolean; invalidReason?: string } }).body;
       this.nonces.release(replayKey);
-      if (body && body.isValid === false) return { ok: false, reason: String(body.invalidReason ?? 'payment invalid').slice(0, 120) };
-      return { ok: false, reason: 'payment facilitator unavailable' };
+      const why = facilitatorFailure(e);
+      if (body && body.isValid === false) {
+        warn('x402_verify_rejected', why);
+        return { ok: false, reason: why.replace(/^HTTP \d+: /, '').slice(0, 200) };
+      }
+      warn('x402_verify_failed', why);
+      return { ok: false, reason: `payment facilitator unavailable (${why})`.slice(0, 240) };
     }
     if (res?.isValid !== true) {
       this.nonces.release(replayKey);
-      return { ok: false, reason: String(res?.invalidReason ?? 'payment invalid').slice(0, 120) };
+      const why = facilitatorFailure({ body: res }) || 'payment invalid';
+      warn('x402_verify_rejected', why);
+      return { ok: false, reason: why.slice(0, 200) };
     }
     return { ok: true, payer: res.payer ?? a.from, payload: p, replayKey, version };
   }
@@ -250,10 +271,16 @@ export class X402 {
   async settle(payload: PaymentPayload, reqs: PaymentRequirements, version: 1 | 2 = 1): Promise<SettleResult> {
     try {
       const r = (await this.post('settle', 15_000, payload, version === 2 ? this.requirementsV2() : reqs, version)) as SettleResult;
-      if (!r || r.success !== true || !r.transaction) return { success: false, errorReason: r?.errorReason ?? 'settlement not confirmed' };
+      if (!r || r.success !== true || !r.transaction) {
+        const why = r?.errorReason ? facilitatorFailure({ body: r }) : 'settlement not confirmed';
+        warn('x402_settle_failed', why);
+        return { success: false, errorReason: why };
+      }
       return r;
-    } catch {
-      return { success: false, errorReason: 'facilitator unavailable' };
+    } catch (e) {
+      const why = facilitatorFailure(e);
+      warn('x402_settle_failed', why);
+      return { success: false, errorReason: `facilitator unavailable (${why})`.slice(0, 240) };
     }
   }
 
