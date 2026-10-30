@@ -15,10 +15,11 @@ import { header, readJson, readText, send, sendError } from './http-utils.js';
 import { identify, type Identity } from './middleware/authentication.js';
 import { manifest, openapi, VERSION } from './manifest.js';
 import { iconPng } from './icon.js';
-import { BAZAAR_DESCRIPTION, bazaarExtension, buildToolManifest, ICON_PATH, MANIFEST_RE, manifestStatus, SERVICE_NAME, TOOL_INPUTS, TOOL_PATH, TOOL_TAGS } from './opensea-tool.js';
+import { BAZAAR_DESCRIPTION, bazaarExtension, buildToolManifest, ICON_PATH, MANIFEST_RE, manifestStatus, QUOTE_EXAMPLE, SERVICE_NAME, TOOL_INPUTS, TOOL_PATH, TOOL_TAGS } from './opensea-tool.js';
 import { REGISTER_PAGE_CSP, registerPage } from './register-page.js';
-import { PREPARE_DESCRIPTION, PREPARE_PATH, prepareBazaarExtension, X402_GUIDANCE } from './discovery.js';
+import { PREPARE_DESCRIPTION, PREPARE_EXAMPLE, PREPARE_PATH, prepareBazaarExtension, X402_GUIDANCE } from './discovery.js';
 import { REGISTER_8004_CSP, register8004Page, registration, WELL_KNOWN_PATH as AGENT_REG_PATH } from './erc8004.js';
+import { X402_PAY_CSP, x402PayPage } from './x402-pay.js';
 import { errorResult, McpServer, PAYMENT_META, PAYMENT_RESPONSE_META, paymentRequiredResult, textResult } from './mcp.js';
 
 /** 402index.io domain-claim verification hash for bridgepilot.onrender.com (public by design; the claim token is not in the repo). */
@@ -176,6 +177,19 @@ export function createApp(svc: Services) {
       handler: async () => ({
         status: 200, body: register8004Page(cfg), contentType: 'text/html; charset=utf-8',
         headers: { 'content-security-policy': REGISTER_8004_CSP, 'x-robots-tag': 'noindex', 'x-frame-options': 'DENY' },
+      }),
+    },
+    {
+      // Owner pays each paid route once with their own wallet (x402 v2) so the CDP Bazaar indexes it.
+      method: 'GET', pattern: /^\/x402-pay$/, keys: [],
+      handler: async () => ({
+        status: 200, contentType: 'text/html; charset=utf-8',
+        body: x402PayPage('BridgePilot', cfg.x402.payTo ?? '', [
+          { id: 'quote', name: 'Route quote (quote)', path: TOOL_PATH, example: QUOTE_EXAMPLE },
+          { id: 'prepare', name: 'Route preparation (prepare; pay the quote first, it uses that quote and your address)', path: PREPARE_PATH,
+            example: PREPARE_EXAMPLE, useAccount: ['sender', 'recipient'], fromQuote: true },
+        ], 5_000_000n),
+        headers: { 'content-security-policy': X402_PAY_CSP, 'cache-control': 'no-store', 'x-robots-tag': 'noindex', 'x-frame-options': 'DENY' },
       }),
     },
     {
