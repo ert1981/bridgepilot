@@ -167,6 +167,15 @@ export function createApp(svc: Services) {
       method: 'GET', pattern: /^\/\.well-known\/402index-verify\.txt$/, keys: [],
       handler: async () => ({ status: 200, body: cfg.index402Verify ?? INDEX402_VERIFY_HASH, contentType: 'text/plain; charset=utf-8' }),
     },
+    {
+      // Glama directory ownership claim: a public verification token (safe to publish). GLAMA_CLAIM overrides it.
+      method: 'GET', pattern: /^\/\.well-known\/glama\.json$/, keys: [],
+      handler: async () => ({
+        status: 200,
+        body: { $schema: 'https://glama.ai/mcp/schemas/connector.json', claim: (process.env.GLAMA_CLAIM ?? 'glama_claim_qcqbiFgd_HQ6aF4-lOsE09QRleib6h4U').trim() },
+        headers: { 'access-control-allow-origin': '*' },
+      }),
+    },
     ...[AGENT_REG_PATH, '/agent-registration.json'].map((p) => ({
       method: 'GET', pattern: new RegExp(`^${p.replace(/[.\/]/g, (c) => `\\${c}`)}$`), keys: [] as string[],
       handler: (async () => ({ status: 200, body: registration(cfg), headers: { 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=300' } })) as Handler,
